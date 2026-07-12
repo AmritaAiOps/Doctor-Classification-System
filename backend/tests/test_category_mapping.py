@@ -41,14 +41,51 @@ def test_international_tpa():
     assert cm.map_region("TPA-AASANDHA") == "International"
 
 
-def test_unmapped_value_returns_none_and_is_logged():
-    before = len(cm.unmapped_values)
-    result = cm.map_category("Totally Unknown Category XYZ")
-    assert result is None
+def test_unmapped_value_returns_none():
+    assert cm.map_category("Totally Unknown Category XYZ") is None
     assert cm.map_region("Totally Unknown Category XYZ") is None
-    assert len(cm.unmapped_values) == before + 1
 
 
 def test_display_label_cpr_shows_as_corporates():
     assert cm.display_label("CPR") == "Corporates"
     assert cm.display_label("General") == "General"
+
+
+def test_normalize_loose_strips_all_punctuation():
+    assert cm.normalize_loose("CPR - 25") == "cpr25"
+    assert cm.normalize_loose("CPR25.") == "cpr25"
+    assert cm.normalize_loose(None) == ""
+
+
+def test_resolve_category_falls_back_to_map_category_without_overrides():
+    assert cm.resolve_category("CPR") == "CPR"
+    assert cm.resolve_category("Totally Unknown") is None
+
+
+def test_resolve_category_uses_override_when_present():
+    overrides = {cm.normalize_loose("Weird ESI Variant"): "ECHS"}
+    assert cm.resolve_category("Weird ESI Variant", overrides) == "ECHS"
+    # override key matching is loose-normalized, so punctuation/case differences still match
+    assert cm.resolve_category("weird-esi variant!", overrides) == "ECHS"
+
+
+def test_resolve_category_override_does_not_affect_other_values():
+    overrides = {cm.normalize_loose("Weird ESI Variant"): "ECHS"}
+    assert cm.resolve_category("CPR", overrides) == "CPR"
+    assert cm.resolve_category("Still Unknown", overrides) is None
+
+
+def test_resolve_category_excluded_sentinel_resolves_to_none():
+    overrides = {cm.normalize_loose("Junk Value"): cm.EXCLUDED}
+    assert cm.resolve_category("Junk Value", overrides) is None
+
+
+def test_is_overridden_true_for_bucket_and_excluded_false_otherwise():
+    overrides = {
+        cm.normalize_loose("Weird ESI Variant"): "ECHS",
+        cm.normalize_loose("Junk Value"): cm.EXCLUDED,
+    }
+    assert cm.is_overridden("Weird ESI Variant", overrides) is True
+    assert cm.is_overridden("Junk Value", overrides) is True
+    assert cm.is_overridden("Never Touched", overrides) is False
+    assert cm.is_overridden("Weird ESI Variant", None) is False

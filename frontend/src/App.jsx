@@ -3,7 +3,8 @@ import './App.css'
 import Dropzone from './components/Dropzone'
 import UploadedFilesList from './components/UploadedFilesList'
 import ReportChecklist from './components/ReportChecklist'
-import SummaryCard from './components/SummaryCard'
+import ResultsDashboard from './components/dashboard/ResultsDashboard'
+import CategoryReviewPanel from './components/CategoryReviewPanel'
 import { REPORT_TYPES, PROCESSING_STEPS } from './reports'
 
 function todayIso() {
@@ -154,6 +155,27 @@ function App() {
     }
   }
 
+  async function handleAcceptCategories(resolutions) {
+    try {
+      const res = await fetch('/category-review/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resolutions }),
+      })
+      const data = await res.json()
+      if (data.status === 'error') {
+        setErrorInfo({ failed_file: data.failed_file, reason: data.reason })
+        setPhase('error')
+        return
+      }
+      setResult(data)
+      setPhase(data.status === 'warning' ? 'warning' : 'success')
+    } catch (err) {
+      setErrorInfo({ failed_file: null, reason: 'Could not reach the server to apply that override.' })
+      setPhase('error')
+    }
+  }
+
   function handleDateChange(value) {
     dateManuallySet.current = true
     setDateAutoDetected(false)
@@ -171,6 +193,7 @@ function App() {
     setDate(todayIso())
     setDateAutoDetected(false)
     dateManuallySet.current = false
+    setOtherIncome('')
     setPhase('idle')
     setResult(null)
     setErrorInfo(null)
@@ -180,7 +203,7 @@ function App() {
   const detectedCount = REPORT_TYPES.filter((rt) => !!assignments[rt]).length
 
   return (
-    <div className="app">
+    <div className={`app ${(phase === 'success' || phase === 'warning') ? 'app--wide' : ''}`}>
       <header className="app__header">
         <h1>Daily HIS Report Automation</h1>
         <p className="app__subtitle">
@@ -207,7 +230,6 @@ function App() {
               </ul>
             </div>
           )}
-          <SummaryCard summary={result.summary} />
           <div className="result-actions">
             <a className="button button--primary" href={result.download_url} download>
               Download Final output.xlsx
@@ -215,6 +237,14 @@ function App() {
             <button className="button button--secondary" onClick={handleReset}>
               Start over
             </button>
+          </div>
+          <div className="results-split">
+            <div className="results-split__col">
+              <CategoryReviewPanel categoryReview={result.category_review} onAccept={handleAcceptCategories} />
+            </div>
+            <div className="results-split__col">
+              <ResultsDashboard values={result.values} categoryReview={result.category_review} date={date} />
+            </div>
           </div>
         </>
       )}

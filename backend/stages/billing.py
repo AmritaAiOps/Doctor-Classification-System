@@ -3,7 +3,8 @@ import re
 
 import pandas as pd
 
-from backend.stages.category_mapping import map_category, map_region
+from backend.stages.category_mapping import resolve_category, map_region
+from backend.stages.category_review import review_dataframe
 from backend.stages.row_cleaning import strip_junk_rows
 
 
@@ -28,20 +29,20 @@ def _find_column(df: pd.DataFrame, expected_name: str, required: bool = True):
     return None
 
 
-def _enrich(df: pd.DataFrame) -> pd.DataFrame:
+def _enrich(df: pd.DataFrame, overrides: dict = None) -> pd.DataFrame:
     total_amt_col = _find_column(df, "TotalAmt")
     disc_amt_col = _find_column(df, "DiscAmt")
     category_col = _find_column(df, "Category")
 
     df = df.copy()
     df["Net"] = pd.to_numeric(df[total_amt_col], errors="coerce") - pd.to_numeric(df[disc_amt_col], errors="coerce")
-    df["CAT"] = df[category_col].map(map_category)
+    df["CAT"] = df[category_col].map(lambda v: resolve_category(v, overrides))
     df["Cash_Credit"] = df["CAT"].map(lambda cat: "Cash" if cat == "General" else "Credit")
     df["Region"] = df[category_col].map(map_region)
-    return df
+    return df, category_col
 
 
-def process_billing_op(df: pd.DataFrame) -> tuple:
+def process_billing_op(df: pd.DataFrame, source_file: str = None, overrides: dict = None) -> tuple:
     total_amt_col = _find_column(df, "TotalAmt")
     disc_amt_col = _find_column(df, "DiscAmt")
     bill_type_col = _find_column(df, "BillType")
@@ -49,11 +50,12 @@ def process_billing_op(df: pd.DataFrame) -> tuple:
     cleaned, _dropped = strip_junk_rows(df, [total_amt_col, disc_amt_col])
     cleaned = cleaned.loc[cleaned[bill_type_col] == "O_B"]
 
-    enriched = _enrich(cleaned)
-    return enriched, enriched["Net"].sum()
+    enriched, category_col = _enrich(cleaned, overrides)
+    category_review = review_dataframe(enriched, category_col, source_file, overrides)
+    return enriched, enriched["Net"].sum(), category_review
 
 
-def process_billing_ip(df: pd.DataFrame) -> tuple:
+def process_billing_ip(df: pd.DataFrame, source_file: str = None, overrides: dict = None) -> tuple:
     total_amt_col = _find_column(df, "TotalAmt")
     disc_amt_col = _find_column(df, "DiscAmt")
     bill_type_col = _find_column(df, "BillType")
@@ -61,10 +63,11 @@ def process_billing_ip(df: pd.DataFrame) -> tuple:
     cleaned, _dropped = strip_junk_rows(df, [total_amt_col, disc_amt_col])
     cleaned = cleaned.loc[cleaned[bill_type_col].isin(["IP_D", "IP_F"])]
 
-    enriched = _enrich(cleaned)
+    enriched, category_col = _enrich(cleaned, overrides)
+    category_review = review_dataframe(enriched, category_col, source_file, overrides)
 
     time_col = _find_column(enriched, "Time", required=False)
     if time_col is not None:
         enriched = enriched.drop(columns=[time_col])
 
-    return enriched, enriched["Net"].sum()
+    return enriched, enriched["Net"].sum(), category_review

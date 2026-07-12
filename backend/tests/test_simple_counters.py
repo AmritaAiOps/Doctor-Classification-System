@@ -80,3 +80,14 @@ def test_process_bed_occupancy_case_insensitive_exclusion():
     })
     result = process_bed_occupancy(df)
     assert result["beds_occupied"] == 20
+
+
+def test_process_bed_occupancy_excludes_the_sheets_own_total_row():
+    # The real sheet has a "Total" row summing every category -- including
+    # it in our own sum double-counts everything under it.
+    df = pd.DataFrame({
+        "Category": ["3 Bed Ward", "ICU", "Total"],
+        "Beds Occupied": [25, 157, 182],
+    })
+    result = process_bed_occupancy(df)
+    assert result["beds_occupied"] == 182

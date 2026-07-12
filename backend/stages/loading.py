@@ -8,6 +8,7 @@ import io
 import pandas as pd
 
 from backend.stages.detection import find_header_row
+from backend.stages.reports import RAW_POSITIONAL_REPORTS
 
 CANDIDATE_ID_SEPARATOR = "::"
 
@@ -24,12 +25,12 @@ def parse_candidate_id(candidate_id: str):
 
 
 def load_report_dataframe(excel_file: pd.ExcelFile, sheet_name: str, report_type: str) -> pd.DataFrame:
-    """OP Encounters is loaded raw (header=None) because its processing logic
+    """OP Encounters is loaded raw (header=None): its processing logic
     (Stage 2's subtotal extractor) walks rows positionally, including the
     'Speciality'/'Total Encounters' label rows a normal header parse would
     otherwise consume. Every other report uses its detected header row.
     """
-    if report_type == "OP Encounters":
+    if report_type in RAW_POSITIONAL_REPORTS:
         return excel_file.parse(sheet_name=sheet_name, header=None)
 
     preview = excel_file.parse(sheet_name=sheet_name, header=None, nrows=10)

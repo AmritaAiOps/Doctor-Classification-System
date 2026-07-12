@@ -3,12 +3,18 @@ import json
 import uuid
 from datetime import date as date_type
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
+from backend.stages.category_mapping import normalize_loose, EXCLUDED
+from backend.stages.learned_overrides import load_learned_overrides, add_learned_overrides
+from backend.stages.daily_history import record_day
+from backend.stages.mtd import compute_mtd_columns
 from backend.stages.detection import detect_report_type
 from backend.stages.date_detection import detect_report_date
 from backend.stages.loading import build_dataframes, make_candidate_id
@@ -20,6 +26,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = BASE_DIR / "data" / "outputs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+VALID_BUCKETS = {"General", "TPA", "ECHS", "P CARD FUND", "CPR"}
+
 app = FastAPI(title="Daily HIS Report Automation")
 
 app.add_middleware(
@@ -28,6 +36,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# In-memory state for the most recently processed run -- lets the Category
+# Review panel re-trigger recalculation without re-uploading files. Single
+# office-PC daily tool, so this doesn't need to survive a restart or serve
+# concurrent runs; it's keyed by file_id in case that changes later.
+RUN_STATE: dict = {}
+_last_file_id: str = None
 
 
 def _summarize(values: dict) -> dict:
@@ -39,18 +54,59 @@ def _summarize(values: dict) -> dict:
     }
 
 
-def _warnings_from_unmapped(unmapped: dict) -> list:
+def _warnings_from_category_review(category_review: dict) -> list:
     warnings = []
-    for label, values_list in unmapped.items():
-        cleaned = [v for v in values_list if v is not None and str(v).strip().lower() != "nan"]
-        if cleaned:
-            sample = ", ".join(str(v) for v in cleaned[:3])
-            more = f" (+{len(cleaned) - 3} more)" if len(cleaned) > 3 else ""
-            warnings.append(
-                f"{label}: {len(cleaned)} row(s) had a Category not found in Category Codes "
-                f"(e.g. {sample}{more}) — excluded from category-based totals, needs manual review."
-            )
+    unmatched = category_review.get("unmatched", [])
+    possible = category_review.get("possible_matches", [])
+
+    if unmatched:
+        total_rows = sum(entry["frequency"] for entry in unmatched)
+        sample = ", ".join((str(entry["raw_value"]) if entry["raw_value"] is not None else "(blank)") for entry in unmatched[:3])
+        more = f" (+{len(unmatched) - 3} more)" if len(unmatched) > 3 else ""
+        warnings.append(
+            f"{len(unmatched)} unmatched category value(s) across {total_rows} row(s) "
+            f"(e.g. {sample}{more}) — excluded from category-based totals. See Category Review."
+        )
+
+    if possible:
+        warnings.append(
+            f"{len(possible)} category value(s) have a possible match awaiting your confirmation "
+            "— see Category Review panel."
+        )
+
     return warnings
+
+
+def _build_result_response(values: dict, category_review: dict, download_url: str) -> dict:
+    warnings = _warnings_from_category_review(category_review)
+    return {
+        "status": "warning" if warnings else "success",
+        "summary": _summarize(values),
+        "values": values,
+        "warnings": warnings,
+        "category_review": category_review,
+        "download_url": download_url,
+    }
+
+
+def _write_output(file_id: str, values: dict, report_date) -> str:
+    # Persist today's figures for this month before computing MTD/Daily
+    # Average, so today's own entry is included in the running sum.
+    history = record_day(report_date, values, metric_keys=list(values.keys()))
+    mtd_columns = compute_mtd_columns(report_date, values, history)
+
+    work_dir = OUTPUT_DIR / file_id
+    work_dir.mkdir(parents=True, exist_ok=True)
+    output_path = work_dir / "Final output.xlsx"
+    write_final_output(
+        template_path=BASE_DIR / "config" / "final_output_template.xlsx",
+        output_path=output_path,
+        values=values,
+        date_column="F",
+        report_date=report_date,
+        mtd_columns=mtd_columns,
+    )
+    return str(output_path)
 
 
 @app.post("/detect")
@@ -119,6 +175,8 @@ async def process(
     mapping: str = Form(...),
     date: str = Form(...),
 ):
+    global _last_file_id
+
     try:
         report_date = date_type.fromisoformat(date)
     except ValueError:
@@ -152,34 +210,29 @@ async def process(
     except ValueError as exc:
         return {"status": "error", "failed_file": None, "reason": str(exc)}
 
+    # Seed with previously-accepted corrections so a value fixed on an earlier
+    # day doesn't need re-confirming every run.
+    overrides = dict(load_learned_overrides())
     try:
-        values, unmapped = run_pipeline(dataframes)
+        values, category_review = run_pipeline(dataframes, overrides=overrides)
     except StageProcessingError as exc:
         return {"status": "error", "failed_file": exc.label, "reason": exc.reason}
     except Exception as exc:  # noqa: BLE001 - last-resort guard, still reported in plain language
         return {"status": "error", "failed_file": None, "reason": str(exc)}
 
     file_id = uuid.uuid4().hex
-    work_dir = OUTPUT_DIR / file_id
-    work_dir.mkdir(parents=True, exist_ok=True)
-    output_path = work_dir / "Final output.xlsx"
+    _write_output(file_id, values, report_date)
 
-    write_final_output(
-        template_path=BASE_DIR / "config" / "final_output_template.xlsx",
-        output_path=output_path,
-        values=values,
-        date_column="F",
-        report_date=report_date,
-    )
-
-    warnings = _warnings_from_unmapped(unmapped)
-
-    return {
-        "status": "warning" if warnings else "success",
-        "summary": _summarize(values),
-        "warnings": warnings,
-        "download_url": f"/download/{file_id}",
+    RUN_STATE[file_id] = {
+        "dataframes": dataframes,
+        "report_date": report_date,
+        "overrides": overrides,
+        "values": values,
+        "category_review": category_review,
     }
+    _last_file_id = file_id
+
+    return _build_result_response(values, category_review, f"/download/{file_id}")
 
 
 @app.get("/download/{file_id}")
@@ -192,3 +245,66 @@ def download(file_id: str):
         filename="Final output.xlsx",
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
+
+@app.get("/category-review")
+def get_category_review():
+    if _last_file_id is None or _last_file_id not in RUN_STATE:
+        raise HTTPException(status_code=404, detail="No processed run yet.")
+    return RUN_STATE[_last_file_id]["category_review"]
+
+
+class CategoryResolution(BaseModel):
+    raw_value: str
+    chosen_bucket: Optional[str] = None  # one of VALID_BUCKETS, or None to explicitly exclude
+
+
+class CategoryResolveRequest(BaseModel):
+    resolutions: list[CategoryResolution]
+
+
+@app.post("/category-review/resolve")
+def resolve_category_review(payload: CategoryResolveRequest):
+    if _last_file_id is None or _last_file_id not in RUN_STATE:
+        raise HTTPException(status_code=404, detail="No processed run to apply an override to.")
+
+    if not payload.resolutions:
+        return {"status": "error", "failed_file": None, "reason": "No resolutions provided."}
+
+    # Never trust the frontend dropdown alone -- re-validate every chosen
+    # bucket against the fixed 5-value enum server-side.
+    invalid_buckets = sorted(
+        {r.chosen_bucket for r in payload.resolutions if r.chosen_bucket is not None and r.chosen_bucket not in VALID_BUCKETS}
+    )
+    if invalid_buckets:
+        return {
+            "status": "error",
+            "failed_file": None,
+            "reason": f"Unknown bucket(s) {invalid_buckets}. Must be one of {sorted(VALID_BUCKETS)} or null to exclude.",
+        }
+
+    state = RUN_STATE[_last_file_id]
+    new_entries = {
+        normalize_loose(r.raw_value): (r.chosen_bucket if r.chosen_bucket is not None else EXCLUDED)
+        for r in payload.resolutions
+    }
+    state["overrides"].update(new_entries)
+    # Persisted separately from config/category_map.json (the master table) --
+    # this only remembers reviewed exceptions (bucket or excluded) so they
+    # don't need re-confirming on future days; it never rewrites the actual
+    # Category Codes mapping.
+    add_learned_overrides(new_entries)
+
+    try:
+        values, category_review = run_pipeline(
+            state["dataframes"],
+            overrides=state["overrides"],
+        )
+    except StageProcessingError as exc:
+        return {"status": "error", "failed_file": exc.label, "reason": exc.reason}
+
+    state["values"] = values
+    state["category_review"] = category_review
+    _write_output(_last_file_id, values, state["report_date"])
+
+    return _build_result_response(values, category_review, f"/download/{_last_file_id}")

@@ -9,6 +9,7 @@ export default defineConfig({
       '/detect': 'http://127.0.0.1:8000',
       '/process': 'http://127.0.0.1:8000',
       '/download': 'http://127.0.0.1:8000',
+      '/category-review': 'http://127.0.0.1:8000',
     },
   },
 })

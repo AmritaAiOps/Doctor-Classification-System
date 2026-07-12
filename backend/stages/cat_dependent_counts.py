@@ -3,7 +3,8 @@ import re
 
 import pandas as pd
 
-from backend.stages.category_mapping import map_category
+from backend.stages.category_mapping import resolve_category
+from backend.stages.category_review import review_dataframe
 
 BUCKET_TO_OUTPUT_KEY = {
     "General": "General",
@@ -28,25 +29,23 @@ def _find_column(df: pd.DataFrame, expected_name: str) -> str:
     raise KeyError(f"Column matching {expected_name!r} not found. Available: {list(df.columns)}")
 
 
-def _process_cat_counts(df: pd.DataFrame) -> dict:
+def _process_cat_counts(df: pd.DataFrame, source_file: str = None, overrides: dict = None) -> dict:
     category_col = _find_column(df, "Category")
     df = df.copy()
-    df["CAT"] = df[category_col].map(map_category)
-
-    unmapped_rows = df.loc[df["CAT"].isna(), category_col].tolist()
+    df["CAT"] = df[category_col].map(lambda v: resolve_category(v, overrides))
 
     result = {}
     for bucket, output_key in BUCKET_TO_OUTPUT_KEY.items():
         result[output_key] = int((df["CAT"] == bucket).sum())
 
     result["Total"] = sum(result.values())
-    result["unmapped"] = unmapped_rows
+    result["category_review"] = review_dataframe(df, category_col, source_file, overrides)
     return result
 
 
-def process_ip_admission(df: pd.DataFrame) -> dict:
-    return _process_cat_counts(df)
+def process_ip_admission(df: pd.DataFrame, source_file: str = None, overrides: dict = None) -> dict:
+    return _process_cat_counts(df, source_file, overrides)
 
 
-def process_ip_discharges(df: pd.DataFrame) -> dict:
-    return _process_cat_counts(df)
+def process_ip_discharges(df: pd.DataFrame, source_file: str = None, overrides: dict = None) -> dict:
+    return _process_cat_counts(df, source_file, overrides)

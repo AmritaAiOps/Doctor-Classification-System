@@ -1,0 +1,76 @@
+num tables: 9
+=== TABLE 0 ===
+['#', 'HIS File Name', 'Internal Reference Name']
+['1', 'Patient Registration Collection', 'OP New Registration']
+['2', 'Encounter Report', 'OP Encounters']
+['3', 'Detailed Admission Report', 'IP Admission']
+['4', 'Admission Analysis Report', 'Admission Analysis']
+['5', 'Discharge Patient Report', 'IP Discharges']
+['6', 'Total Billing Report', 'Billing INR OP']
+['7', 'Discharge Wise IP Report', 'Billing INR IP']
+['8', 'Credit Posted Items (AEPL → AIMS)', 'AEPL Billing']
+['9', 'Bed Occupancy Report (emailed)', 'Bed Occupancy']
+
+=== TABLE 1 ===
+['CAT Bucket', 'Final output label', 'Raw Category values that map to this bucket']
+['CPR', 'Corporates', 'CPR, CPR 25, CPR.1, CPR 24, CPR-Self, LABCPR 26, labcprop.1, LABCPROP25, LABCPROP26']
+['General', 'General', 'ASK, Dental faculty, Dental PG, Dental student, DEP, FDM, FDM-AMP, FDM-AMP(W), FM, GNL, INHS GNL, INHS 2025, PH centre, PM fund, Study faculty, Thesis, MCS, NCS, GNL - SD, GNL -SRV']
+['ECHS', 'ECHS/ESI /INHS/ISRO/CIAL', 'CHSS, CHSS 2023, CIAL GNL, CIAL-CISF, ECHS, ECHS 2025, ESI, ESI - 2021, ESI - 2025, Ex-servicemen']
+['TPA', 'TPA', 'EMP, EMP-TPA, SSV-TPA, TPA, TPA 24']
+['P CARD FUND', 'P.Card.Fund', 'P CARD FUND']
+
+=== TABLE 2 ===
+['CAT Bucket', 'Final output label', 'Raw Category values that map to this bucket']
+['CPR', 'Corporates', 'CPR-Afroasian, CPR - Oman, CPR- Saarc - Self']
+['TPA', 'TPA', 'TPA - AASANTHA 25, TPA-AASANDHA']
+['General', 'General', 'DEP-Afroasian, DEP - Maldives, DEP - Oman, DEP - SAARC, DEP - Westerners and Mid Easterners, GNL - Aasandha, GNL -Westerners and Mid Easterners, GNL - Oman, GNL-SAARC']
+
+=== TABLE 3 ===
+['CAT bucket', 'Final output sub-row label']
+['General', 'General']
+['TPA', 'TPA']
+['ECHS', 'ECHS/ESI /INHS/ISRO/CIAL']
+['P CARD FUND', 'P.Card.Fund']
+['CPR', 'Corporates']
+
+=== TABLE 4 ===
+['Source column in file', 'Final output row']
+['Total Emergency Admission', 'Emergency Admission']
+['Total Planned Admission', 'Planned Admission']
+['Total admission from OP', 'Admission from OP (walk-in)']
+
+=== TABLE 5 ===
+['Filter applied', 'Final output row']
+['Domestic only', 'Domestic']
+['International only', 'International']
+['Domestic + International', 'Total Billing']
+
+=== TABLE 6 ===
+['Filter applied', 'Final output row']
+['Cash, Domestic', 'Domestic']
+['Cash, International', 'International']
+
+=== TABLE 7 ===
+['Filter applied', 'Final output row']
+['Credit, Domestic, CAT = ECHS', 'ECHS/ESI /INHS/ISRO/CIAL']
+['Credit, Domestic, CAT = P CARD FUND', 'P.Card.Fund']
+['Credit, Domestic, CAT = TPA', 'TPA']
+['Credit, Domestic, CAT = CPR', 'Corporates']
+['Credit, Domestic (all combined)', 'Domestic']
+['Credit, International, CAT = TPA', 'TPA Aasandha']
+['Credit, International, CAT = CPR', 'Corporates (International)']
+['Credit, International (all combined)', 'International']
+['Grand total of all Credit rows', 'Total Billing']
+
+=== TABLE 8 ===
+['Final output row', 'Block', 'Status']
+['Long Stay Patients', 'Volumes', '❌ Source file and logic unknown']
+['Cash (including IP advances)', 'Collection (INR)', '❌ Source file unknown']
+['Credit Card', 'Collection (INR)', '❌ Source file unknown']
+['Bank', 'Collection (INR)', '❌ Source file unknown']
+['Other Income (Bank Interest)', 'Collection (INR)', '❌ Source file unknown']
+['Less: Patients Refunds through Cash', 'Collection (INR)', '❌ Source file unknown']
+['Less: Patients Refunds through Bank', 'Collection (INR)', '❌ Source file unknown']
+['Total Collection', 'Collection (INR)', '❌ Depends on all above — formula unknown until sources confirmed']
+['Hospital Revenue (Net of AEPL)', 'Between AEPL Billing & Collection', 'Likely = Total Billing − AEPL Billing, but must be confirmed before coding']
+

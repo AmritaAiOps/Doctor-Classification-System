@@ -14,7 +14,7 @@ def _op_df():
 
 
 def test_process_billing_op_filters_and_enriches():
-    enriched, total = process_billing_op(_op_df())
+    enriched, total, _review = process_billing_op(_op_df())
     # Junk header row dropped, IP_F row filtered out, only 2 O_B rows remain
     assert len(enriched) == 2
     assert total == 900 + 4500  # Net = TotalAmt - DiscAmt
@@ -41,7 +41,7 @@ def _ip_df():
 
 
 def test_process_billing_ip_filters_and_enriches():
-    enriched, total = process_billing_ip(_ip_df())
+    enriched, total, _review = process_billing_ip(_ip_df())
     # Junk header dropped, O_B row filtered out, IP_F + IP_D remain
     assert len(enriched) == 2
     assert total == 17000 + 7200
@@ -60,10 +60,10 @@ def test_process_billing_ip_filters_and_enriches():
 def test_process_billing_ip_drops_time_column_if_present():
     df = _ip_df()
     df["Time"] = ["", "10:00", "11:00", "12:00"]
-    enriched, _total = process_billing_ip(df)
+    enriched, _total, _review = process_billing_ip(df)
     assert "Time" not in enriched.columns
 
 
 def test_process_billing_ip_ok_without_time_column():
-    enriched, _total = process_billing_ip(_ip_df())
+    enriched, _total, _review = process_billing_ip(_ip_df())
     assert "Time" not in enriched.columns

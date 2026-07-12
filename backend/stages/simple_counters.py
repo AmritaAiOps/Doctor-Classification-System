@@ -20,6 +20,9 @@ EXCLUDE_SPECIALITIES = [
 
 BED_OCCUPANCY_EXCLUDED_CATEGORIES = {
     "nursery", "operationtheatre", "labour", "daycasea", "daycasebed", "emunit",
+    # the sheet's own grand-total row -- summing every category already gives
+    # this figure, so including the row too silently doubles the count
+    "total",
 }
 
 BED_STRENGTH = 1000
