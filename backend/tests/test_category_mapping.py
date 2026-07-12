@@ -53,6 +53,21 @@ def test_display_label_cpr_shows_as_corporates():
 
 def test_normalize_loose_strips_all_punctuation():
     assert cm.normalize_loose("CPR - 25") == "cpr25"
+
+
+def test_resolve_region_uses_override_bucket_not_config():
+    overrides = {cm.normalize_loose("Some Weird Corp"): "TPA"}
+    assert cm.resolve_region("Some Weird Corp", overrides) == "Domestic"
+
+
+def test_resolve_region_excluded_override_returns_none():
+    overrides = {cm.normalize_loose("Junk Value"): cm.EXCLUDED}
+    assert cm.resolve_region("Junk Value", overrides) is None
+
+
+def test_resolve_region_falls_back_to_map_region_without_override():
+    assert cm.resolve_region("CPR - Oman", overrides=None) == "International"
+    assert cm.resolve_region("CPR - Oman", overrides={}) == "International"
     assert cm.normalize_loose("CPR25.") == "cpr25"
     assert cm.normalize_loose(None) == ""
 

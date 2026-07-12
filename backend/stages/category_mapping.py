@@ -88,6 +88,24 @@ def resolve_category(raw_value: Optional[str], overrides: Optional[dict] = None)
     return map_category(raw_value)
 
 
+def resolve_region(raw_value: Optional[str], overrides: Optional[dict] = None) -> Optional[str]:
+    """Same as map_region, but checks overrides first.
+
+    An override only records a bucket (chosen via the Category Review panel),
+    not the Domestic/International flag from category_map.json, so an
+    overridden row can't be region-matched the way a config-mapped one can.
+    # ponytail: default overridden rows to Domestic -- the international
+    # buckets are rare, distinctly-named variants (e.g. "TPA Aasantha",
+    # "Corporates (International)") unlikely to show up as an unmatched
+    # value needing review. Revisit if that assumption breaks.
+    """
+    if overrides and isinstance(raw_value, str):
+        key = normalize_loose(raw_value)
+        if key in overrides:
+            return None if overrides[key] == EXCLUDED else "Domestic"
+    return map_region(raw_value)
+
+
 def is_overridden(raw_value: Optional[str], overrides: Optional[dict] = None) -> bool:
     """True if raw_value has an explicit override recorded (bucket or EXCLUDED)."""
     if not overrides or not isinstance(raw_value, str):

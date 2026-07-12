@@ -111,6 +111,12 @@ function App() {
     setDroppedFiles((prev) => prev.filter((f) => f.name !== name))
   }
 
+  function handleClearAllFiles() {
+    setDroppedFiles([])
+    setRejectedNames([])
+    setDetectError(null)
+  }
+
   function handleAssign(reportType, candidateId) {
     manualOverrides.current.add(reportType)
     setAssignments((prev) => ({ ...prev, [reportType]: candidateId }))
@@ -193,7 +199,6 @@ function App() {
     setDate(todayIso())
     setDateAutoDetected(false)
     dateManuallySet.current = false
-    setOtherIncome('')
     setPhase('idle')
     setResult(null)
     setErrorInfo(null)
@@ -269,6 +274,19 @@ function App() {
               {detectedCount} of {REPORT_TYPES.length} reports ready
             </div>
           </section>
+
+          {droppedFiles.length > 0 && (
+            <div className="clear-files-row">
+              <button
+                type="button"
+                className="button button--tiny button--secondary"
+                disabled={phase === 'processing'}
+                onClick={handleClearAllFiles}
+              >
+                Clear all files
+              </button>
+            </div>
+          )}
 
           <Dropzone disabled={phase === 'processing'} onFilesAdded={handleFilesAdded} onRejected={handleFilesRejected} />
 

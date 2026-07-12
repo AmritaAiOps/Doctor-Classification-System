@@ -3,7 +3,7 @@ import re
 
 import pandas as pd
 
-from backend.stages.category_mapping import resolve_category, map_region
+from backend.stages.category_mapping import resolve_category, resolve_region
 from backend.stages.category_review import review_dataframe
 from backend.stages.row_cleaning import strip_junk_rows
 
@@ -38,7 +38,7 @@ def _enrich(df: pd.DataFrame, overrides: dict = None) -> pd.DataFrame:
     df["Net"] = pd.to_numeric(df[total_amt_col], errors="coerce") - pd.to_numeric(df[disc_amt_col], errors="coerce")
     df["CAT"] = df[category_col].map(lambda v: resolve_category(v, overrides))
     df["Cash_Credit"] = df["CAT"].map(lambda cat: "Cash" if cat == "General" else "Credit")
-    df["Region"] = df[category_col].map(map_region)
+    df["Region"] = df[category_col].map(lambda v: resolve_region(v, overrides))
     return df, category_col
 
 

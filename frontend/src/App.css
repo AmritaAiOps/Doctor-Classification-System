@@ -113,6 +113,12 @@ body {
   margin-left: auto;
 }
 
+.clear-files-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
 /* Dropzone */
 .dropzone {
   border: 2px dashed var(--gray-300);
@@ -809,65 +815,6 @@ body {
   margin-left: 6px;
   font-weight: 700;
   color: var(--red-500);
-}
-
-/* Compare bar */
-.compare-bar__track {
-  display: flex;
-  height: 10px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: var(--gray-100);
-}
-
-.compare-bar__segment {
-  height: 100%;
-}
-
-.compare-bar__segment--blue {
-  background: var(--blue-600);
-}
-
-.compare-bar__segment--amber {
-  background: var(--amber-500);
-}
-
-.compare-bar__segment--green {
-  background: var(--green-500);
-}
-
-.compare-bar__legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--gray-700);
-}
-
-.compare-bar__legend-item {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.compare-bar__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  display: inline-block;
-}
-
-.compare-bar__dot--blue {
-  background: var(--blue-600);
-}
-
-.compare-bar__dot--amber {
-  background: var(--amber-500);
-}
-
-.compare-bar__dot--green {
-  background: var(--green-500);
 }
 
 /* Bucket table (reused across Volumes + Billing cards) */
