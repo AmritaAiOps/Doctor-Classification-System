@@ -27,9 +27,9 @@ CONSTANT_KEYS = {"Bed Strength"}
 
 # Computed from other rows' own Daily Average / MTD Proj, not accumulated
 # directly -- same subtraction applied in every column, not just "as on".
-# Row 63 = row 57 ("Total Billing" at the end of the Credit block) - row 60 (AEPL Billing).
+# Row 63 = row 57 (grand Total Billing) - row 60 (AEPL Billing).
 DERIVED_KEYS = {
-    "Hospital Revenue (Net of AEPL)": ("Credit Total Billing", "AEPL Billing"),
+    "Hospital Revenue (Net of AEPL)": ("Total Billing", "AEPL Billing"),
 }
 
 # Every other row in ROW_MAP that isn't one of the above is treated as a
@@ -41,12 +41,21 @@ CUMULATIVE_KEYS = {
 }
 
 
-def compute_mtd_columns(report_date, values: dict, history: dict) -> dict:
+def compute_mtd_columns(report_date, values: dict, history: dict):
     """Returns {metric_key: {"daily_avg": ..., "mtd_proj": ...}} for every
     row this month, using history (see daily_history.load_history()) plus
     today's own `values` for the running total.
+
+    Returns None when day 1 of this month was never recorded: such a month
+    is never averaged or projected (its columns stay "-"), because a partial
+    month with an unknown number of missing days would give a misleading
+    average. This applies generically to any month the automation joined
+    mid-way through.
     """
-    day_of_month = report_date.day
+    month = report_date.strftime("%Y-%m")
+    if not any("1" in series for series in history.get(month, {}).values()):
+        return None
+
     days_in_month = calendar.monthrange(report_date.year, report_date.month)[1]
     result = {}
 
@@ -54,8 +63,11 @@ def compute_mtd_columns(report_date, values: dict, history: dict) -> dict:
         if key not in values:
             continue
         series = get_month_series(history, report_date, key)
-        mtd_actual = sum(series.values())
-        daily_avg = mtd_actual / day_of_month
+        if not series:
+            continue
+        # Running Daily Average = mean of the days actually recorded so far,
+        # not sum / day-of-month, so a skipped day doesn't drag the average.
+        daily_avg = sum(series.values()) / len(series)
         result[key] = {"daily_avg": daily_avg, "mtd_proj": daily_avg * days_in_month}
 
     for key in AVERAGE_KEYS:

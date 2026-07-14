@@ -9,7 +9,9 @@ import re
 from pathlib import Path
 from typing import Optional
 
-CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "category_map.json"
+from backend.runtime_paths import CONFIG_DIR
+
+CONFIG_PATH = CONFIG_DIR / "category_map.json"
 
 DISPLAY_LABELS = {
     "CPR": "Corporates",

@@ -4,6 +4,7 @@ Writes computed values into the existing 'Final output' sheet at fixed rows,
 in a single caller-specified date column. Every row is now resolved -- Long
 Stay Patients (row 29) was the last one, computed from the IP Discharges file.
 """
+import calendar
 import logging
 from pathlib import Path
 
@@ -53,7 +54,10 @@ ROW_MAP = {
     54: "Credit International Total",
     55: "Credit International TPA Aasantha",
     56: "Credit International Corporates (International)",
-    57: "Credit Total Billing",
+    # Row 57 is the grand "Total Billing" at the end of the cash/credit block
+    # (= rows 44+45+48+54 = row 34), NOT the credit-only subtotal -- the
+    # credit-only figure ("Credit Total Billing") has no row of its own.
+    57: "Total Billing",
     60: "AEPL Billing",
     63: "Hospital Revenue (Net of AEPL)",
 }
@@ -62,25 +66,85 @@ KEY_TO_ROW = {key: row for row, key in ROW_MAP.items()}
 
 # Rows written as a live Excel formula referencing other rows in the SAME
 # column, instead of a pre-computed number -- so opening the workbook shows
-# staff exactly how the figure was derived. Row 63 = row 57 ("Total Billing"
-# at the end of the Credit block) minus row 60 (AEPL Billing).
+# staff exactly how the figure was derived. Row 63 = row 57 (grand Total
+# Billing) minus row 60 (AEPL Billing).
 DERIVED_FORMULA_ROWS = {
-    "Hospital Revenue (Net of AEPL)": ("Credit Total Billing", "AEPL Billing"),
+    "Hospital Revenue (Net of AEPL)": ("Total Billing", "AEPL Billing"),
 }
 
 
+UNAVAILABLE = "—"  # em dash shown when a month has no day-1 snapshot
+
+
+def _finalize_prior_months(ws, finalized_months: dict) -> int:
+    """Inserts a static 2-col ("Daily Average <Month>", "MTD <Month>") pair
+    just left of the 'Particulars' column for every completed month not
+    already present, filling UNAVAILABLE for months with no day-1 snapshot.
+    Inserting columns never shifts rows, so row numbers stay fixed.
+    Returns the (possibly shifted) 'Particulars' column index.
+    """
+    part_idx = next(
+        c for c in range(1, ws.max_column + 1)
+        if str(ws.cell(row=1, column=c).value or "").strip() == "Particulars"
+    )
+    # Only columns LEFT of 'Particulars' are finalized months -- the current
+    # 3-col block to the right also has a "Daily Average <Month>" header and
+    # must not count as already-finalized.
+    existing = {str(ws.cell(row=1, column=c).value or "").strip() for c in range(1, part_idx)}
+    # ponytail: headers carry month name only (matches the manual template), so
+    # dedupe breaks after 12 months of history -- add the year to headers then.
+    for (year, month), finalized in sorted(finalized_months.items()):
+        name = calendar.month_name[month]
+        if f"Daily Average {name}" in existing:
+            continue
+        ws.insert_cols(part_idx, 2)
+        ws.cell(row=1, column=part_idx).value = f"Daily Average {name}"
+        ws.cell(row=1, column=part_idx + 1).value = f"MTD {name}"
+        for row, key in ROW_MAP.items():
+            if finalized is None:
+                ws.cell(row=row, column=part_idx).value = UNAVAILABLE
+                ws.cell(row=row, column=part_idx + 1).value = UNAVAILABLE
+            elif key in finalized:
+                ws.cell(row=row, column=part_idx).value = finalized[key]["daily_avg"]
+                ws.cell(row=row, column=part_idx + 1).value = finalized[key]["mtd"]
+        part_idx += 2
+    return part_idx
+
+
 def write_final_output(
-    template_path, output_path, values: dict, date_column: str, report_date=None, mtd_columns: dict = None
+    template_path,
+    output_path,
+    values: dict,
+    date_column: str = None,
+    report_date=None,
+    mtd_columns: dict = None,
+    finalized_months: dict = None,
 ) -> str:
     """mtd_columns: optional {row_key: {"daily_avg": ..., "mtd_proj": ...}}
     (see backend.stages.mtd.compute_mtd_columns). When given, writes Daily
     Average into the column right after date_column and MTD (Proj) into the
     one after that -- e.g. date_column="F" writes Daily Average to G and
     MTD (Proj) to H, matching the template's "As on" / "Daily Average" /
-    "MTD (Proj)" column layout.
+    "MTD (Proj)" column layout. mtd_columns=None with finalized_months given
+    means the current month has no day-1 snapshot: both columns get "-".
+
+    finalized_months: optional {(year, month): finalize_month(...) result}
+    for completed months (see backend.monthly_average). When given, prior
+    months roll over into static 2-col pairs left of 'Particulars' and the
+    current 3-col block location is derived from the sheet, ignoring
+    date_column.
     """
     wb = openpyxl.load_workbook(template_path)
     ws = wb[SHEET_NAME]
+
+    month_gated = finalized_months is not None and mtd_columns is None
+    if finalized_months is not None:
+        part_idx = _finalize_prior_months(ws, finalized_months)
+        date_column = get_column_letter(part_idx + 1)
+        if report_date is not None:
+            name = calendar.month_name[report_date.month]
+            ws.cell(row=1, column=part_idx + 2).value = f"Daily Average {name}"
+            ws.cell(row=1, column=part_idx + 3).value = f"MTD {name} (Proj)"
 
     if report_date is not None:
         ws[f"{date_column}1"] = f"As on {report_date.strftime('%d %b %Y')}"
@@ -101,6 +165,9 @@ def write_final_output(
             if mtd_columns:
                 ws[f"{daily_avg_column}{row}"] = f"={daily_avg_column}{positive_row}-{daily_avg_column}{negative_row}"
                 ws[f"{mtd_proj_column}{row}"] = f"={mtd_proj_column}{positive_row}-{mtd_proj_column}{negative_row}"
+            elif month_gated:
+                ws[f"{daily_avg_column}{row}"] = UNAVAILABLE
+                ws[f"{mtd_proj_column}{row}"] = UNAVAILABLE
             continue
 
         if key not in values:
@@ -108,7 +175,10 @@ def write_final_output(
             continue
         ws[f"{date_column}{row}"] = values[key]
 
-        if mtd_columns and key in mtd_columns:
+        if month_gated:
+            ws[f"{daily_avg_column}{row}"] = UNAVAILABLE
+            ws[f"{mtd_proj_column}{row}"] = UNAVAILABLE
+        elif mtd_columns and key in mtd_columns:
             ws[f"{daily_avg_column}{row}"] = mtd_columns[key]["daily_avg"]
             ws[f"{mtd_proj_column}{row}"] = mtd_columns[key]["mtd_proj"]
 

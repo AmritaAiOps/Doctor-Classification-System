@@ -28,11 +28,16 @@ function App() {
   const dateManuallySet = useRef(false)
   const [phase, setPhase] = useState('idle') // idle | processing | success | warning | error
   const [stepIndex, setStepIndex] = useState(0)
+  const [progress, setProgress] = useState(0)
   const [result, setResult] = useState(null)
   const [errorInfo, setErrorInfo] = useState(null)
   const stepTimer = useRef(null)
+  const progressTimer = useRef(null)
 
-  useEffect(() => () => clearInterval(stepTimer.current), [])
+  useEffect(() => () => {
+    clearInterval(stepTimer.current)
+    clearInterval(progressTimer.current)
+  }, [])
 
   useEffect(() => {
     if (droppedFiles.length === 0) {
@@ -128,12 +133,18 @@ function App() {
   async function handleProcess() {
     setPhase('processing')
     setStepIndex(0)
+    setProgress(0)
     setResult(null)
     setErrorInfo(null)
 
     stepTimer.current = setInterval(() => {
       setStepIndex((i) => (i + 1) % PROCESSING_STEPS.length)
     }, 1100)
+    // Estimated progress: eases toward 95% while the server works, jumps to
+    // 100% when the response lands (the API gives no real progress events).
+    progressTimer.current = setInterval(() => {
+      setProgress((p) => Math.min(95, p + (95 - p) * 0.06 + 0.3))
+    }, 250)
 
     const form = new FormData()
     droppedFiles.forEach((f) => form.append('files', f))
@@ -145,9 +156,16 @@ function App() {
       const res = await fetch('/process', { method: 'POST', body: form })
       const data = await res.json()
       clearInterval(stepTimer.current)
+      clearInterval(progressTimer.current)
+      setProgress(100)
 
       if (data.status === 'error') {
-        setErrorInfo({ failed_file: data.failed_file, reason: data.reason })
+        setErrorInfo({
+          failed_file: data.failed_file,
+          reason: data.reason,
+          code: data.error?.code,
+          category: data.error?.category,
+        })
         setPhase('error')
         return
       }
@@ -156,6 +174,7 @@ function App() {
       setPhase(data.status === 'warning' ? 'warning' : 'success')
     } catch (err) {
       clearInterval(stepTimer.current)
+      clearInterval(progressTimer.current)
       setErrorInfo({ failed_file: null, reason: 'Could not reach the server. Check your connection and try again.' })
       setPhase('error')
     }
@@ -179,6 +198,23 @@ function App() {
     } catch (err) {
       setErrorInfo({ failed_file: null, reason: 'Could not reach the server to apply that override.' })
       setPhase('error')
+    }
+  }
+
+  async function handleResetBaseline() {
+    try {
+      const res = await fetch('/api/schema-baseline/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category: errorInfo.category }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setErrorInfo(null)
+        setPhase('idle')
+      }
+    } catch {
+      /* banner already visible; user can retry */
     }
   }
 
@@ -220,6 +256,15 @@ function App() {
         <div className="banner banner--error">
           <div className="banner__title">Processing failed{errorInfo.failed_file ? `: ${errorInfo.failed_file}` : ''}</div>
           <div className="banner__body">{errorInfo.reason}</div>
+          {errorInfo.code === 'SCHEMA_MISMATCH' && (
+            <button
+              type="button"
+              className="button button--tiny button--secondary"
+              onClick={handleResetBaseline}
+            >
+              Reset baseline for {errorInfo.category}
+            </button>
+          )}
         </div>
       )}
 
@@ -326,6 +371,10 @@ function App() {
               <div className="processing-status">
                 <span className="spinner" aria-hidden="true" />
                 <span>{PROCESSING_STEPS[stepIndex]}</span>
+                <span className="processing-status__pct">{Math.round(progress)}%</span>
+                <div className="progress-bar">
+                  <div className="progress-bar__fill" style={{ width: `${progress}%` }} />
+                </div>
               </div>
             ) : (
               <button className="button button--primary button--large" disabled={!canProcess} onClick={handleProcess}>

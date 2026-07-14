@@ -10,6 +10,7 @@ export default defineConfig({
       '/process': 'http://127.0.0.1:8000',
       '/download': 'http://127.0.0.1:8000',
       '/category-review': 'http://127.0.0.1:8000',
+      '/api': 'http://127.0.0.1:8000',
     },
   },
 })

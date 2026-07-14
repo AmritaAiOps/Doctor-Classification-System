@@ -10,7 +10,9 @@ logic (not just a remembered exception), update category_map.json directly
 import json
 from pathlib import Path
 
-LEARNED_OVERRIDES_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "learned_overrides.json"
+from backend.runtime_paths import CONFIG_DIR
+
+LEARNED_OVERRIDES_PATH = CONFIG_DIR / "learned_overrides.json"
 
 
 def load_learned_overrides() -> dict:

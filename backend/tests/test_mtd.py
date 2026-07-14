@@ -37,47 +37,56 @@ def test_average_metric_averages_days_not_sums():
     assert result["Beds Occupied"]["mtd_proj"] == expected_avg  # no *days_in_month scaling
 
 
-def test_average_metric_falls_back_to_todays_value_with_no_history():
-    report_date = datetime.date(2026, 6, 1)
-    values = {"Occupancy %": 0.966}
-    result = compute_mtd_columns(report_date, values, history={})
-    assert result["Occupancy %"]["daily_avg"] == 0.966
-    assert result["Occupancy %"]["mtd_proj"] == 0.966
+def test_month_without_day_one_returns_none():
+    # Automation joined mid-month: day 1 never recorded -> no averaging, ever.
+    report_date = datetime.date(2026, 5, 20)
+    history = {"2026-05": {"OP Encounters": {"18": 100, "19": 110, "20": 120}}}
+    assert compute_mtd_columns(report_date, {"OP Encounters": 120}, history) is None
+
+
+def test_skipped_day_does_not_drag_average():
+    # Days 1 and 3 recorded, day 2 skipped -> mean of the 2 recorded days.
+    report_date = datetime.date(2026, 6, 3)
+    history = {"2026-06": {"OP Encounters": {"1": 100, "3": 300}}}
+    result = compute_mtd_columns(report_date, {"OP Encounters": 300}, history)
+    assert result["OP Encounters"]["daily_avg"] == 200
+    assert result["OP Encounters"]["mtd_proj"] == 200 * 30
 
 
 def test_constant_metric_carries_value_forward_unchanged():
     report_date = datetime.date(2026, 6, 18)
     values = {"Bed Strength": 1000}
-    result = compute_mtd_columns(report_date, values, history={})
+    history = {"2026-06": {"Bed Strength": {"1": 1000}}}  # day-1 gate open
+    result = compute_mtd_columns(report_date, values, history)
     assert result["Bed Strength"] == {"daily_avg": 1000, "mtd_proj": 1000}
 
 
 def test_hospital_revenue_derived_from_row57_minus_aepl_in_every_column():
-    # Row 63 = row 57 ("Total Billing" at the end of the Credit block, our
-    # internal key "Credit Total Billing") minus row 60 (AEPL Billing).
+    # Row 63 = row 57 (grand "Total Billing") minus row 60 (AEPL Billing).
     report_date = datetime.date(2026, 6, 18)
     history = {
         "2026-06": {
-            "Credit Total Billing": {"18": 8742193.15},
-            "AEPL Billing": {"18": 9667188.25},
+            "Total Billing": {"1": 8742193.15, "18": 8742193.15},
+            "AEPL Billing": {"1": 9667188.25, "18": 9667188.25},
         }
     }
     values = {
-        "Credit Total Billing": 8742193.15,
+        "Total Billing": 8742193.15,
         "AEPL Billing": 9667188.25,
         "Hospital Revenue (Net of AEPL)": 8742193.15 - 9667188.25,
     }
     result = compute_mtd_columns(report_date, values, history)
 
-    expected_daily_avg = result["Credit Total Billing"]["daily_avg"] - result["AEPL Billing"]["daily_avg"]
-    expected_mtd_proj = result["Credit Total Billing"]["mtd_proj"] - result["AEPL Billing"]["mtd_proj"]
+    expected_daily_avg = result["Total Billing"]["daily_avg"] - result["AEPL Billing"]["daily_avg"]
+    expected_mtd_proj = result["Total Billing"]["mtd_proj"] - result["AEPL Billing"]["mtd_proj"]
     assert result["Hospital Revenue (Net of AEPL)"]["daily_avg"] == expected_daily_avg
     assert result["Hospital Revenue (Net of AEPL)"]["mtd_proj"] == expected_mtd_proj
 
 
 def test_missing_value_key_is_skipped_not_crashed():
     report_date = datetime.date(2026, 6, 18)
-    result = compute_mtd_columns(report_date, values={}, history={})
+    history = {"2026-06": {"OP Encounters": {"1": 100}}}  # day-1 gate open
+    result = compute_mtd_columns(report_date, values={}, history=history)
     assert result == {}
 
 

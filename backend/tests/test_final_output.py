@@ -107,12 +107,12 @@ def test_write_final_output_skips_gh_columns_when_mtd_columns_omitted(template_p
 
 def test_write_final_output_writes_hospital_revenue_as_a_live_formula(template_path, tmp_path):
     values = {
-        "Credit Total Billing": 8742193.15,
+        "Total Billing": 8742193.15,
         "AEPL Billing": 9667188.25,
         "Hospital Revenue (Net of AEPL)": 8742193.15 - 9667188.25,
     }
     mtd_columns = {
-        "Credit Total Billing": {"daily_avg": 485677.4, "mtd_proj": 14570322.0},
+        "Total Billing": {"daily_avg": 485677.4, "mtd_proj": 14570322.0},
         "AEPL Billing": {"daily_avg": 536999.3, "mtd_proj": 16109980.0},
     }
     output_path = tmp_path / "output.xlsx"

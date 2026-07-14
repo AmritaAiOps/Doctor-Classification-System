@@ -1,5 +1,6 @@
 import io
 import json
+import logging
 import uuid
 from datetime import date as date_type
 from pathlib import Path
@@ -9,12 +10,18 @@ import pandas as pd
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+
+from backend.runtime_paths import CONFIG_DIR, OUTPUT_DIR, FRONTEND_DIST, ensure_runtime_files
 
 from backend.stages.category_mapping import normalize_loose, EXCLUDED
 from backend.stages.learned_overrides import load_learned_overrides, add_learned_overrides
 from backend.stages.daily_history import record_day
 from backend.stages.mtd import compute_mtd_columns
+from backend.monthly_average import compute_month_column, finalize_month
+from backend.format_validator import validate_upload, reset_baseline
+from backend.verification import run_verification, save_verification, load_verification_history
 from backend.stages.detection import detect_report_type
 from backend.stages.date_detection import detect_report_date
 from backend.stages.loading import build_dataframes, make_candidate_id
@@ -22,9 +29,7 @@ from backend.stages.pipeline import run_pipeline, StageProcessingError
 from backend.stages.final_output import write_final_output
 from backend.stages.reports import REPORT_TYPES
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-OUTPUT_DIR = BASE_DIR / "data" / "outputs"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+ensure_runtime_files()
 
 VALID_BUCKETS = {"General", "TPA", "ECHS", "P CARD FUND", "CPR"}
 
@@ -77,7 +82,7 @@ def _warnings_from_category_review(category_review: dict) -> list:
     return warnings
 
 
-def _build_result_response(values: dict, category_review: dict, download_url: str) -> dict:
+def _build_result_response(values: dict, category_review: dict, download_url: str, verification: dict = None) -> dict:
     warnings = _warnings_from_category_review(category_review)
     return {
         "status": "warning" if warnings else "success",
@@ -85,26 +90,48 @@ def _build_result_response(values: dict, category_review: dict, download_url: st
         "values": values,
         "warnings": warnings,
         "category_review": category_review,
+        "verification": verification,
         "download_url": download_url,
     }
+
+
+def _run_verification_safely(values: dict, dataframes: dict, report_date) -> dict:
+    """Verification is diagnostics: if it crashes wholesale, log and carry on
+    -- it must never turn a successful pipeline run into an error."""
+    try:
+        report = run_verification(values, dataframes)
+        save_verification(report_date, report)
+        return report
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger(__name__).warning("verification stage failed to run: %s", exc)
+        return None
 
 
 def _write_output(file_id: str, values: dict, report_date) -> str:
     # Persist today's figures for this month before computing MTD/Daily
     # Average, so today's own entry is included in the running sum.
     history = record_day(report_date, values, metric_keys=list(values.keys()))
+    # None when this month has no day-1 snapshot -> columns written as "-".
     mtd_columns = compute_mtd_columns(report_date, values, history)
+
+    # Roll every completed month in history into a static 2-col pair
+    # ("-" pair if that month never recorded a day 1).
+    finalized_months = {}
+    for month_key_str in history:
+        year, month = map(int, month_key_str.split("-"))
+        if (year, month) < (report_date.year, report_date.month):
+            finalized_months[(year, month)] = finalize_month(year, month)
 
     work_dir = OUTPUT_DIR / file_id
     work_dir.mkdir(parents=True, exist_ok=True)
     output_path = work_dir / "Final output.xlsx"
     write_final_output(
-        template_path=BASE_DIR / "config" / "final_output_template.xlsx",
+        template_path=CONFIG_DIR / "final_output_template.xlsx",
         output_path=output_path,
         values=values,
-        date_column="F",
         report_date=report_date,
         mtd_columns=mtd_columns,
+        finalized_months=finalized_months,
     )
     return str(output_path)
 
@@ -205,6 +232,22 @@ async def process(
             }
         file_bytes[upload.filename] = await upload.read()
 
+    # Stage 0: schema validation against baselines. Hard fail blocks the run
+    # (all 9 reports are mandatory, so a blocked category blocks processing).
+    schema_error, _schema_warnings = validate_upload(mapping_dict, file_bytes)
+    if schema_error:
+        return {
+            "status": "error",
+            "success": False,
+            "error": schema_error,
+            "failed_file": schema_error["category"],
+            "reason": (
+                f"Schema mismatch in {schema_error['category']}: expected column(s) missing: "
+                f"{', '.join(schema_error['missingColumns'])}. If the HIS export format has "
+                "genuinely changed, reset this report's baseline and re-upload."
+            ),
+        }
+
     try:
         dataframes = build_dataframes(mapping_dict, file_bytes)
     except ValueError as exc:
@@ -222,6 +265,7 @@ async def process(
 
     file_id = uuid.uuid4().hex
     _write_output(file_id, values, report_date)
+    verification = _run_verification_safely(values, dataframes, report_date)
 
     RUN_STATE[file_id] = {
         "dataframes": dataframes,
@@ -232,7 +276,49 @@ async def process(
     }
     _last_file_id = file_id
 
-    return _build_result_response(values, category_review, f"/download/{file_id}")
+    return _build_result_response(values, category_review, f"/download/{file_id}", verification)
+
+
+@app.get("/api/monthly-average")
+def monthly_average(date: str, metric: str = "Total Billing"):
+    # ponytail: spec's response shape is per-metric scalars; defaulting the
+    # metric to Total Billing (row 34) -- pass ?metric= for any other row key.
+    try:
+        report_date = date_type.fromisoformat(date)
+    except ValueError:
+        return {"success": False, "error": "date must be YYYY-MM-DD"}
+
+    column = compute_month_column(report_date, metric)
+    if column is None:
+        return {
+            "success": True,
+            "data": {"monthAvailable": False, "asOf": None, "dailyAverage": None, "mtdProjected": None},
+        }
+    return {"success": True, "data": {"monthAvailable": True, **column}}
+
+
+@app.get("/api/verification-report")
+def verification_report(date: str):
+    try:
+        report_date = date_type.fromisoformat(date)
+    except ValueError:
+        return {"success": False, "error": "date must be YYYY-MM-DD"}
+    report = load_verification_history().get(report_date.isoformat())
+    if report is None:
+        return {"success": False, "error": f"No verification report recorded for {date}."}
+    return {"success": True, "data": report}
+
+
+class BaselineResetRequest(BaseModel):
+    category: str
+
+
+@app.post("/api/schema-baseline/reset")
+def schema_baseline_reset(payload: BaselineResetRequest):
+    if payload.category not in REPORT_TYPES:
+        return {"success": False, "error": f"Unknown report category: {payload.category!r}."}
+    reset_baseline(payload.category)
+    return {"success": True, "data": {"category": payload.category, "message": "Baseline reset. The next upload's headers become the new baseline."}}
 
 
 @app.get("/download/{file_id}")
@@ -306,5 +392,13 @@ def resolve_category_review(payload: CategoryResolveRequest):
     state["values"] = values
     state["category_review"] = category_review
     _write_output(_last_file_id, values, state["report_date"])
+    verification = _run_verification_safely(values, state["dataframes"], state["report_date"])
 
-    return _build_result_response(values, category_review, f"/download/{_last_file_id}")
+    return _build_result_response(values, category_review, f"/download/{_last_file_id}", verification)
+
+
+# Serve the built React app (frozen exe / production). Mounted last so every
+# API route above wins; html=True serves index.html at "/". Absent in dev --
+# there the Vite server on :5173 serves the UI and proxies the API here.
+if FRONTEND_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")

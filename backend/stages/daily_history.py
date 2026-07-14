@@ -15,7 +15,9 @@ month-to-date total -- there's no way to backfill days we never received.
 import json
 from pathlib import Path
 
-HISTORY_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "daily_history.json"
+from backend.runtime_paths import CONFIG_DIR
+
+HISTORY_PATH = CONFIG_DIR / "daily_history.json"
 
 
 def load_history() -> dict:
