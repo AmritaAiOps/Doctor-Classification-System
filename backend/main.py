@@ -17,7 +17,7 @@ from backend.runtime_paths import CONFIG_DIR, OUTPUT_DIR, FRONTEND_DIST, ensure_
 
 from backend.stages.category_mapping import normalize_loose, EXCLUDED
 from backend.stages.learned_overrides import load_learned_overrides, add_learned_overrides
-from backend.stages.daily_history import record_day
+from backend.stages.daily_history import record_day, load_history
 from backend.stages.mtd import compute_mtd_columns
 from backend.monthly_average import compute_month_column, finalize_month
 from backend.format_validator import validate_upload, reset_baseline
@@ -107,10 +107,16 @@ def _run_verification_safely(values: dict, dataframes: dict, report_date) -> dic
         return None
 
 
-def _write_output(file_id: str, values: dict, report_date) -> str:
-    # Persist today's figures for this month before computing MTD/Daily
-    # Average, so today's own entry is included in the running sum.
-    history = record_day(report_date, values, metric_keys=list(values.keys()))
+def _record_history(report_date, values: dict) -> None:
+    # Persist today's figures for this month -- needed for MTD/Daily Average
+    # regardless of whether the user ever downloads a spreadsheet.
+    record_day(report_date, values, metric_keys=list(values.keys()))
+
+
+def _build_output_file(file_id: str, values: dict, report_date) -> str:
+    """Renders Final output.xlsx on demand (only called from /download), so a
+    workbook is only ever written to disk when the user actually exports."""
+    history = load_history()
     # None when this month has no day-1 snapshot -> columns written as "-".
     mtd_columns = compute_mtd_columns(report_date, values, history)
 
@@ -264,7 +270,7 @@ async def process(
         return {"status": "error", "failed_file": None, "reason": str(exc)}
 
     file_id = uuid.uuid4().hex
-    _write_output(file_id, values, report_date)
+    _record_history(report_date, values)
     verification = _run_verification_safely(values, dataframes, report_date)
 
     RUN_STATE[file_id] = {
@@ -323,9 +329,10 @@ def schema_baseline_reset(payload: BaselineResetRequest):
 
 @app.get("/download/{file_id}")
 def download(file_id: str):
-    output_path = OUTPUT_DIR / file_id / "Final output.xlsx"
-    if not output_path.exists():
-        raise HTTPException(status_code=404, detail="No processed output found for this id")
+    state = RUN_STATE.get(file_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="No processed run found for this id")
+    output_path = _build_output_file(file_id, state["values"], state["report_date"])
     return FileResponse(
         output_path,
         filename="Final output.xlsx",
@@ -391,7 +398,7 @@ def resolve_category_review(payload: CategoryResolveRequest):
 
     state["values"] = values
     state["category_review"] = category_review
-    _write_output(_last_file_id, values, state["report_date"])
+    _record_history(state["report_date"], values)
     verification = _run_verification_safely(values, state["dataframes"], state["report_date"])
 
     return _build_result_response(values, category_review, f"/download/{_last_file_id}", verification)
