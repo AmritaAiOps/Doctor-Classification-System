@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from backend.runtime_paths import CONFIG_DIR, OUTPUT_DIR, FRONTEND_DIST, ensure_runtime_files
+from backend.runtime_paths import CONFIG_DIR, FRONTEND_DIST, ensure_runtime_files, get_output_dir, set_output_dir, build_output_path
 
 from backend.stages.category_mapping import normalize_loose, EXCLUDED
 from backend.stages.learned_overrides import load_learned_overrides, add_learned_overrides
@@ -23,7 +23,7 @@ from backend.monthly_average import compute_month_column, finalize_month
 from backend.format_validator import validate_upload, reset_baseline
 from backend.verification import run_verification, save_verification, load_verification_history
 from backend.stages.detection import detect_report_type
-from backend.stages.date_detection import detect_report_date
+from backend.stages.date_detection import detect_report_date, detect_dates_from_filenames
 from backend.stages.loading import build_dataframes, make_candidate_id
 from backend.stages.pipeline import run_pipeline, StageProcessingError
 from backend.stages.final_output import write_final_output
@@ -47,7 +47,6 @@ app.add_middleware(
 # office-PC daily tool, so this doesn't need to survive a restart or serve
 # concurrent runs; it's keyed by file_id in case that changes later.
 RUN_STATE: dict = {}
-_last_file_id: str = None
 
 
 def _summarize(values: dict) -> dict:
@@ -82,10 +81,11 @@ def _warnings_from_category_review(category_review: dict) -> list:
     return warnings
 
 
-def _build_result_response(values: dict, category_review: dict, download_url: str, verification: dict = None) -> dict:
+def _build_result_response(file_id: str, values: dict, category_review: dict, download_url: str, verification: dict = None) -> dict:
     warnings = _warnings_from_category_review(category_review)
     return {
         "status": "warning" if warnings else "success",
+        "file_id": file_id,
         "summary": _summarize(values),
         "values": values,
         "warnings": warnings,
@@ -113,7 +113,7 @@ def _record_history(report_date, values: dict) -> None:
     record_day(report_date, values, metric_keys=list(values.keys()))
 
 
-def _build_output_file(file_id: str, values: dict, report_date) -> str:
+def _build_output_file(values: dict, report_date) -> str:
     """Renders Final output.xlsx on demand (only called from /download), so a
     workbook is only ever written to disk when the user actually exports."""
     history = load_history()
@@ -128,9 +128,7 @@ def _build_output_file(file_id: str, values: dict, report_date) -> str:
         if (year, month) < (report_date.year, report_date.month):
             finalized_months[(year, month)] = finalize_month(year, month)
 
-    work_dir = OUTPUT_DIR / file_id
-    work_dir.mkdir(parents=True, exist_ok=True)
-    output_path = work_dir / "Final output.xlsx"
+    output_path = build_output_path(report_date)
     write_final_output(
         template_path=CONFIG_DIR / "final_output_template.xlsx",
         output_path=output_path,
@@ -190,7 +188,11 @@ async def detect(files: list[UploadFile] = File(...)):
             matched_types.add(report_type)
 
     missing = [rt for rt in REPORT_TYPES if rt not in matched_types]
-    detected_date = detect_report_date(sheets_for_date_detection)
+
+    filename_result = detect_dates_from_filenames([upload.filename for upload in files])
+    detected_date = filename_result["date"]
+    if detected_date is None and not filename_result["conflict"]:
+        detected_date = detect_report_date(sheets_for_date_detection)
 
     return {
         "candidates": [
@@ -199,6 +201,7 @@ async def detect(files: list[UploadFile] = File(...)):
         "matches": matches,
         "missing": missing,
         "detected_date": detected_date,
+        "date_conflict": filename_result["conflict"],
     }
 
 
@@ -208,8 +211,6 @@ async def process(
     mapping: str = Form(...),
     date: str = Form(...),
 ):
-    global _last_file_id
-
     try:
         report_date = date_type.fromisoformat(date)
     except ValueError:
@@ -280,9 +281,8 @@ async def process(
         "values": values,
         "category_review": category_review,
     }
-    _last_file_id = file_id
 
-    return _build_result_response(values, category_review, f"/download/{file_id}", verification)
+    return _build_result_response(file_id, values, category_review, f"/download/{file_id}", verification)
 
 
 @app.get("/api/monthly-average")
@@ -327,24 +327,42 @@ def schema_baseline_reset(payload: BaselineResetRequest):
     return {"success": True, "data": {"category": payload.category, "message": "Baseline reset. The next upload's headers become the new baseline."}}
 
 
+class OutputDirRequest(BaseModel):
+    output_dir: str
+
+
+@app.get("/api/settings")
+def get_settings():
+    return {"output_dir": str(get_output_dir())}
+
+
+@app.post("/api/settings")
+def update_settings(payload: OutputDirRequest):
+    try:
+        path = set_output_dir(payload.output_dir)
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail=f"Can't use that folder: {exc}")
+    return {"output_dir": str(path)}
+
+
 @app.get("/download/{file_id}")
 def download(file_id: str):
     state = RUN_STATE.get(file_id)
     if state is None:
         raise HTTPException(status_code=404, detail="No processed run found for this id")
-    output_path = _build_output_file(file_id, state["values"], state["report_date"])
+    output_path = _build_output_file(state["values"], state["report_date"])
     return FileResponse(
         output_path,
-        filename="Final output.xlsx",
+        filename=Path(output_path).name,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
 
 @app.get("/category-review")
-def get_category_review():
-    if _last_file_id is None or _last_file_id not in RUN_STATE:
-        raise HTTPException(status_code=404, detail="No processed run yet.")
-    return RUN_STATE[_last_file_id]["category_review"]
+def get_category_review(file_id: str):
+    if file_id not in RUN_STATE:
+        raise HTTPException(status_code=404, detail="No processed run found for this id.")
+    return RUN_STATE[file_id]["category_review"]
 
 
 class CategoryResolution(BaseModel):
@@ -353,13 +371,14 @@ class CategoryResolution(BaseModel):
 
 
 class CategoryResolveRequest(BaseModel):
+    file_id: str
     resolutions: list[CategoryResolution]
 
 
 @app.post("/category-review/resolve")
 def resolve_category_review(payload: CategoryResolveRequest):
-    if _last_file_id is None or _last_file_id not in RUN_STATE:
-        raise HTTPException(status_code=404, detail="No processed run to apply an override to.")
+    if payload.file_id not in RUN_STATE:
+        raise HTTPException(status_code=404, detail="No processed run found for this id.")
 
     if not payload.resolutions:
         return {"status": "error", "failed_file": None, "reason": "No resolutions provided."}
@@ -376,7 +395,7 @@ def resolve_category_review(payload: CategoryResolveRequest):
             "reason": f"Unknown bucket(s) {invalid_buckets}. Must be one of {sorted(VALID_BUCKETS)} or null to exclude.",
         }
 
-    state = RUN_STATE[_last_file_id]
+    state = RUN_STATE[payload.file_id]
     new_entries = {
         normalize_loose(r.raw_value): (r.chosen_bucket if r.chosen_bucket is not None else EXCLUDED)
         for r in payload.resolutions
@@ -401,7 +420,7 @@ def resolve_category_review(payload: CategoryResolveRequest):
     _record_history(state["report_date"], values)
     verification = _run_verification_safely(values, state["dataframes"], state["report_date"])
 
-    return _build_result_response(values, category_review, f"/download/{_last_file_id}", verification)
+    return _build_result_response(payload.file_id, values, category_review, f"/download/{payload.file_id}", verification)
 
 
 # Serve the built React app (frozen exe / production). Mounted last so every

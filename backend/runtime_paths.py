@@ -10,6 +10,7 @@ Frozen build layout (next to Daily-HIS-Report.exe):
 On first frozen launch the shipped config defaults are copied out of the
 bundle into the writable config dir (only if not already present).
 """
+import json
 import os
 import shutil
 import sys
@@ -30,8 +31,44 @@ else:
 
 CONFIG_DIR = ROOT / "config"
 DATA_DIR = ROOT / "backend" / "data"
-OUTPUT_DIR = ROOT / "data" / "outputs"
 FRONTEND_DIST = BUNDLE_DIR / "dist"
+
+SETTINGS_FILE = CONFIG_DIR / "settings.json"
+DEFAULT_OUTPUT_DIR = Path.home() / "Documents" / "HospitalReportAutomation"
+
+
+def build_output_path(report_date) -> Path:
+    """The one place that decides where a Final Output workbook is written:
+    <output_dir>/<Month YYYY>/Final Output - <dd-mm-yyyy>.xlsx. Re-running
+    the same date overwrites that file rather than creating a duplicate."""
+    month_dir = get_output_dir() / report_date.strftime("%B %Y")
+    month_dir.mkdir(parents=True, exist_ok=True)
+    return month_dir / f"Final Output - {report_date.strftime('%d-%m-%Y')}.xlsx"
+
+
+def get_output_dir() -> Path:
+    """Where generated workbooks are written. User-editable via
+    set_output_dir(); defaults to the Documents folder."""
+    try:
+        raw = json.loads(SETTINGS_FILE.read_text()).get("output_dir")
+    except (FileNotFoundError, ValueError):
+        raw = None
+    return Path(raw) if raw else DEFAULT_OUTPUT_DIR
+
+
+def set_output_dir(path) -> Path:
+    path = Path(path)
+    path.mkdir(parents=True, exist_ok=True)
+    settings = {}
+    if SETTINGS_FILE.exists():
+        try:
+            settings = json.loads(SETTINGS_FILE.read_text())
+        except ValueError:
+            settings = {}
+    settings["output_dir"] = str(path)
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    SETTINGS_FILE.write_text(json.dumps(settings, indent=2))
+    return path
 
 _SHIPPED_CONFIG = [
     "category_map.json",
@@ -43,7 +80,7 @@ _SHIPPED_CONFIG = [
 
 def ensure_runtime_files() -> None:
     """Create writable dirs and seed shipped config defaults (frozen only)."""
-    for d in (CONFIG_DIR, DATA_DIR, OUTPUT_DIR):
+    for d in (CONFIG_DIR, DATA_DIR, get_output_dir()):
         d.mkdir(parents=True, exist_ok=True)
     if FROZEN:
         for name in _SHIPPED_CONFIG:

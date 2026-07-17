@@ -33,6 +33,15 @@ def wait_until_up(port, timeout=20.0):
         time.sleep(0.15)
 
 
+class Api:
+    """Exposed to the frontend as window.pywebview.api.* -- lets the web UI
+    trigger native OS dialogs (a browser alone can't pick a folder)."""
+
+    def choose_folder(self):
+        result = webview.windows[0].create_file_dialog(webview.FOLDER_DIALOG)
+        return result[0] if result else None
+
+
 def main():
     port = find_free_port()
     threading.Thread(
@@ -42,7 +51,7 @@ def main():
     wait_until_up(port)
     url = f"http://{HOST}:{port}"
     try:
-        webview.create_window("Daily HIS Report", url, width=1280, height=860)
+        webview.create_window("Daily HIS Report", url, width=1280, height=860, js_api=Api())
         webview.start()  # blocks until the window is closed
     except Exception:
         # Native window needs the WebView2 runtime (present on Win11 and nearly

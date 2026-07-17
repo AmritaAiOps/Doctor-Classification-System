@@ -6,9 +6,11 @@ Stay Patients (row 29) was the last one, computed from the IP Discharges file.
 """
 import calendar
 import logging
+from copy import copy
 from pathlib import Path
 
 import openpyxl
+from openpyxl.styles import Font
 from openpyxl.utils import column_index_from_string, get_column_letter
 
 logger = logging.getLogger(__name__)
@@ -76,6 +78,26 @@ DERIVED_FORMULA_ROWS = {
 UNAVAILABLE = "—"  # em dash shown when a month has no day-1 snapshot
 
 
+def _copy_column_style(ws, source_col: int, dest_cols) -> None:
+    """openpyxl's insert_cols() leaves new cells unstyled -- clone font,
+    border, fill, alignment and number format from a neighboring column so
+    inserted month columns match the rest of the sheet. Font is forced to
+    Arial regardless of the source, per the sheet's house style."""
+    for row in range(1, ws.max_row + 1):
+        ref = ws.cell(row=row, column=source_col)
+        ref_font = ref.font
+        for col in dest_cols:
+            cell = ws.cell(row=row, column=col)
+            cell.font = Font(
+                name="Arial", size=ref_font.size, bold=ref_font.bold,
+                italic=ref_font.italic, color=ref_font.color,
+            )
+            cell.border = copy(ref.border)
+            cell.fill = copy(ref.fill)
+            cell.alignment = copy(ref.alignment)
+            cell.number_format = ref.number_format
+
+
 def _finalize_prior_months(ws, finalized_months: dict) -> int:
     """Inserts a static 2-col ("Daily Average <Month>", "MTD <Month>") pair
     just left of the 'Particulars' column for every completed month not
@@ -98,6 +120,7 @@ def _finalize_prior_months(ws, finalized_months: dict) -> int:
         if f"Daily Average {name}" in existing:
             continue
         ws.insert_cols(part_idx, 2)
+        _copy_column_style(ws, source_col=part_idx + 2, dest_cols=(part_idx, part_idx + 1))
         ws.cell(row=1, column=part_idx).value = f"Daily Average {name}"
         ws.cell(row=1, column=part_idx + 1).value = f"MTD {name}"
         for row, key in ROW_MAP.items():
@@ -136,6 +159,13 @@ def write_final_output(
     """
     wb = openpyxl.load_workbook(template_path)
     ws = wb[SHEET_NAME]
+
+    # The template also carries the raw per-report source sheets (used only
+    # as a reference while building the template); the exported workbook
+    # should be the Final output sheet alone.
+    for sheet_name in list(wb.sheetnames):
+        if sheet_name != SHEET_NAME:
+            del wb[sheet_name]
 
     month_gated = finalized_months is not None and mtd_columns is None
     if finalized_months is not None:

@@ -7,12 +7,6 @@ import ResultsDashboard from './components/dashboard/ResultsDashboard'
 import CategoryReviewPanel from './components/CategoryReviewPanel'
 import { REPORT_TYPES, PROCESSING_STEPS } from './reports'
 
-function todayIso() {
-  const d = new Date()
-  const offset = d.getTimezoneOffset()
-  return new Date(d.getTime() - offset * 60000).toISOString().slice(0, 10)
-}
-
 function App() {
   const [droppedFiles, setDroppedFiles] = useState([])
   const [rejectedNames, setRejectedNames] = useState([])
@@ -23,8 +17,9 @@ function App() {
   const [assignments, setAssignments] = useState({})
   const manualOverrides = useRef(new Set())
 
-  const [date, setDate] = useState(todayIso)
+  const [date, setDate] = useState('')
   const [dateAutoDetected, setDateAutoDetected] = useState(false)
+  const [dateConflict, setDateConflict] = useState(false)
   const dateManuallySet = useRef(false)
   const [phase, setPhase] = useState('idle') // idle | processing | success | warning | error
   const [stepIndex, setStepIndex] = useState(0)
@@ -34,10 +29,56 @@ function App() {
   const stepTimer = useRef(null)
   const progressTimer = useRef(null)
 
+  const [showSettings, setShowSettings] = useState(false)
+  const [outputDir, setOutputDir] = useState('')
+  const [settingsError, setSettingsError] = useState(null)
+  const [browsing, setBrowsing] = useState(false)
+
   useEffect(() => () => {
     clearInterval(stepTimer.current)
     clearInterval(progressTimer.current)
   }, [])
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((res) => res.json())
+      .then((data) => setOutputDir(data.output_dir))
+      .catch(() => {})
+  }, [])
+
+  async function saveOutputDir(path) {
+    setSettingsError(null)
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ output_dir: path }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setSettingsError(data.detail || 'Could not save that folder.')
+        return
+      }
+      setOutputDir(data.output_dir)
+    } catch {
+      setSettingsError('Could not reach the server to save that setting.')
+    }
+  }
+
+  async function handleBrowse() {
+    if (!window.pywebview?.api?.choose_folder) {
+      setSettingsError('Folder picker is only available in the desktop app.')
+      return
+    }
+    setBrowsing(true)
+    setSettingsError(null)
+    try {
+      const path = await window.pywebview.api.choose_folder()
+      if (path) await saveOutputDir(path)
+    } finally {
+      setBrowsing(false)
+    }
+  }
 
   useEffect(() => {
     if (droppedFiles.length === 0) {
@@ -71,9 +112,13 @@ function App() {
       setCandidates(data.candidates)
       setAutoMatches(matchMap)
 
+      setDateConflict(!!data.date_conflict)
       if (data.detected_date && !dateManuallySet.current) {
         setDate(data.detected_date)
         setDateAutoDetected(true)
+      } else if (!dateManuallySet.current) {
+        setDate('')
+        setDateAutoDetected(false)
       }
 
       const validIds = new Set(data.candidates.map((c) => c.id))
@@ -185,7 +230,7 @@ function App() {
       const res = await fetch('/category-review/resolve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resolutions }),
+        body: JSON.stringify({ file_id: result.file_id, resolutions }),
       })
       const data = await res.json()
       if (data.status === 'error') {
@@ -221,6 +266,7 @@ function App() {
   function handleDateChange(value) {
     dateManuallySet.current = true
     setDateAutoDetected(false)
+    setDateConflict(false)
     setDate(value)
   }
 
@@ -232,8 +278,9 @@ function App() {
     setAssignments({})
     manualOverrides.current = new Set()
     setDetectError(null)
-    setDate(todayIso())
+    setDate('')
     setDateAutoDetected(false)
+    setDateConflict(false)
     dateManuallySet.current = false
     setPhase('idle')
     setResult(null)
@@ -250,7 +297,37 @@ function App() {
         <p className="app__subtitle">
           Drop today's reports below — one combined workbook, separate files, or a mix.
         </p>
+        <button
+          type="button"
+          className="settings-toggle"
+          onClick={() => setShowSettings((v) => !v)}
+        >
+          <span className="settings-toggle__icon" aria-hidden="true">📁</span>
+          Output folder
+        </button>
       </header>
+
+      {showSettings && (
+        <section className="panel settings-panel">
+          <div className="panel__row">
+            <span className="panel__label">Save reports to</span>
+            <span className="settings-panel__path" title={outputDir}>{outputDir || 'Loading…'}</span>
+            <button
+              type="button"
+              className="button button--tiny button--primary"
+              disabled={browsing}
+              onClick={handleBrowse}
+            >
+              {browsing ? 'Choosing…' : 'Browse…'}
+            </button>
+          </div>
+          {settingsError && (
+            <div className="banner banner--error banner--compact">
+              <div className="banner__body">{settingsError}</div>
+            </div>
+          )}
+        </section>
+      )}
 
       {phase === 'error' && errorInfo && (
         <div className="banner banner--error">
@@ -315,6 +392,13 @@ function App() {
               />
               {dateAutoDetected && <span className="checklist__tag checklist__tag--auto">detected from files</span>}
             </div>
+            {dateConflict && (
+              <div className="banner banner--error banner--compact">
+                <div className="banner__body">
+                  Uploaded files have conflicting dates in their filenames. Please confirm the correct report date manually.
+                </div>
+              </div>
+            )}
             <div className="panel__counter">
               {detectedCount} of {REPORT_TYPES.length} reports ready
             </div>

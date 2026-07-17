@@ -61,6 +61,42 @@ body {
   font-size: 14px;
 }
 
+.settings-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--gray-100);
+  background: white;
+  color: var(--blue-600);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  margin-bottom: 16px;
+}
+
+.settings-toggle:hover {
+  border-color: var(--blue-600);
+  background: #eef4fd;
+}
+
+.settings-toggle__icon {
+  font-size: 13px;
+}
+
+.settings-panel__path {
+  flex: 1;
+  font-size: 13px;
+  color: var(--gray-700);
+  background: var(--gray-50);
+  padding: 6px 10px;
+  border-radius: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Panel: date + other income + counter */
 .panel {
   display: flex;

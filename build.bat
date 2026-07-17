@@ -16,8 +16,13 @@ echo 3/3 Packaging single-file exe...
 python -m PyInstaller --noconfirm build_exe.spec || goto :fail
 
 echo Done -^> dist\HospitalReportAutomation.exe
+echo.
+echo Build succeeded.
+pause
 exit /b 0
 
 :fail
 echo BUILD FAILED (see error above).
+echo.
+pause
 exit /b 1
