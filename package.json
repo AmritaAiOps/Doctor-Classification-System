@@ -1,0 +1,14 @@
+{
+  "name": "daily-his-report-automation",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "setup": "pip install -r requirements.txt && npm install && npm install --prefix frontend",
+    "dev": "concurrently -n backend,frontend -c blue,green \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "python -m uvicorn backend.main:app --reload --port 8000",
+    "dev:frontend": "npm run dev --prefix frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
