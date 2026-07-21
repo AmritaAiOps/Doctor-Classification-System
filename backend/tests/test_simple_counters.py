@@ -16,6 +16,16 @@ def test_process_op_new_registration_counts_non_blank_mrd():
     assert process_op_new_registration(df) == 3
 
 
+def test_process_op_new_registration_ignores_trailing_note_row():
+    # Raw HIS exports leave a note in the MRD column below the data; it must
+    # not be counted as a registration (a plain notna() count would return 4).
+    df = pd.DataFrame({
+        "Mrd Number": [123, 456, 789, "a) Take the count of MRD number - 3 "],
+        "Patient Name": ["A", "B", "C", None],
+    })
+    assert process_op_new_registration(df) == 3
+
+
 def test_process_op_encounters_delegates_to_subtotal_extractor():
     rows = [
         ["Speciality", "Cardiology", None],

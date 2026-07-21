@@ -45,7 +45,12 @@ def _find_column(df: pd.DataFrame, expected_name: str) -> str:
 
 def process_op_new_registration(df: pd.DataFrame) -> int:
     col = _find_column(df, "MRD Number")
-    return int(df[col].notna().sum())
+    # Count only genuine (numeric) MRD numbers. Raw HIS exports leave a
+    # trailing note row in the MRD column (e.g. "a) Take the count of MRD
+    # number - 382"); a plain notna() count treats that text cell as a
+    # registration and overcounts by one. The pre-cleaned/edited files have
+    # the note stripped, so both formats now agree on the real count.
+    return int(pd.to_numeric(df[col], errors="coerce").notna().sum())
 
 
 def process_op_encounters(df: pd.DataFrame) -> int:

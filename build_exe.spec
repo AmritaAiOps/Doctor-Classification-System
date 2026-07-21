@@ -1,5 +1,7 @@
 # PyInstaller spec -- build from repo root with:  pyinstaller build_exe.spec
-# Produces a single-file desktop app: dist/HospitalReportAutomation.exe
+# Produces a single-file desktop app: dist/HospitalReportAutomation.exe -- one
+# portable file that can be moved/run from anywhere. Build speed comes from the
+# isolated venv + heavy-lib excludes below, not from the packaging mode.
 from PyInstaller.utils.hooks import collect_submodules, collect_all
 
 # pywebview ships its GUI backend + the WebView2 .NET assemblies as data/
@@ -28,7 +30,14 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],
-    excludes=["tkinter", "matplotlib"],
+    # Heavy libs the app never uses -- excluded so a stray transitive import
+    # (or a global-env install) can't drag them into the bundle. torch alone
+    # is ~2GB and was the main cause of slow builds / bloated exe.
+    excludes=[
+        "tkinter", "matplotlib",
+        "torch", "torchvision", "torchaudio",
+        "scipy", "sklearn", "transformers", "tensorflow",
+    ],
     noarchive=False,
 )
 pyz = PYZ(a.pure)

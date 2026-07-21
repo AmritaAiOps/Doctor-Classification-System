@@ -3,10 +3,16 @@ REM One-shot build: frontend -> Python deps -> single-file exe. Run from repo ro
 setlocal
 
 echo 1/3 Building frontend...
-call npm install --prefix frontend || goto :fail
+REM Skip npm install when deps are already present -- saves time on rebuilds.
+if not exist frontend\node_modules call npm install --prefix frontend || goto :fail
 call npm run build --prefix frontend || goto :fail
 
-echo 2/3 Installing Python + build deps...
+echo 2/3 Installing Python + build deps (isolated venv)...
+REM Build inside a dedicated venv so PyInstaller only ever sees the app's real
+REM dependencies -- not whatever heavy packages (torch, etc.) happen to be in
+REM the global environment. Keeps the build fast and the exe small.
+if not exist .venv python -m venv .venv || goto :fail
+call .venv\Scripts\activate.bat || goto :fail
 python -m pip install -r requirements.txt pyinstaller pywebview || goto :fail
 
 echo Closing any running instance so the old exe isn't locked...
