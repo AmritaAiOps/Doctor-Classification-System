@@ -25,6 +25,18 @@ _CATEGORY_MAP: dict = {}
 # Category Review, since a human already made that call.
 EXCLUDED = "__EXCLUDED__"
 
+# Substrings shared by every International category code in category_map.json
+# (cprafroasian, tpaaasantha25, gnlsaarc, depmaldives, gnloman, ...). Used as a
+# fallback ONLY for overridden values with no exact category_map.json entry --
+# e.g. a fiscal-year variant like "TPA Aasantha 26-27" that hasn't been added
+# to the master table yet -- so a brand-new international spelling variant
+# doesn't silently default to Domestic just because it went through Category
+# Review instead of an exact map lookup.
+INTERNATIONAL_HINTS = (
+    "afroasian", "oman", "saarc", "maldives", "aasandha", "aasantha",
+    "westernersandmideasterners",
+)
+
 
 def normalize_loose(value) -> str:
     """Aggressive normalization for lookup AND fuzzy/override matching:
@@ -46,6 +58,24 @@ def _load_map() -> dict:
     return _CATEGORY_MAP
 
 
+def _lookup(raw_value: str) -> Optional[dict]:
+    """category_map.json lookup, falling back to the trailing-digits-stripped
+    key if the exact key isn't found -- e.g. "CPR 26" (this fiscal year's
+    code, not yet added to the Category Codes sheet) falls back to "CPR"
+    itself. Codes are re-issued with a new year suffix every year (CPR 24,
+    CPR 25, CPR 26, ...) and the year never changes what bucket/region they
+    belong to, so there's no need to hand-add one row per year."""
+    m = _load_map()
+    key = normalize_loose(raw_value)
+    entry = m.get(key)
+    if entry is not None:
+        return entry
+    stripped = re.sub(r"\d+$", "", key)
+    if stripped != key:
+        return m.get(stripped)
+    return None
+
+
 def map_category(raw_value: Optional[str]) -> Optional[str]:
     """Returns the internal bucket name (CPR, General, ECHS, TPA, P CARD FUND) or None.
 
@@ -55,7 +85,7 @@ def map_category(raw_value: Optional[str]) -> Optional[str]:
     """
     if not raw_value or not isinstance(raw_value, str):
         return None
-    entry = _load_map().get(normalize_loose(raw_value))
+    entry = _lookup(raw_value)
     if entry is None:
         return None
     return entry["bucket"]
@@ -65,7 +95,7 @@ def map_region(raw_value: Optional[str]) -> Optional[str]:
     """Returns 'Domestic' or 'International' or None."""
     if not raw_value or not isinstance(raw_value, str):
         return None
-    entry = _load_map().get(normalize_loose(raw_value))
+    entry = _lookup(raw_value)
     if entry is None:
         return None
     return entry["region"]
@@ -93,17 +123,19 @@ def resolve_region(raw_value: Optional[str], overrides: Optional[dict] = None) -
     """Same as map_region, but checks overrides first.
 
     An override only records a bucket (chosen via the Category Review panel),
-    not the Domestic/International flag from category_map.json, so an
-    overridden row can't be region-matched the way a config-mapped one can.
-    # ponytail: default overridden rows to Domestic -- the international
-    # buckets are rare, distinctly-named variants (e.g. "TPA Aasantha",
-    # "Corporates (International)") unlikely to show up as an unmatched
-    # value needing review. Revisit if that assumption breaks.
+    not the Domestic/International flag. If the raw value is still present
+    in category_map.json (just re-bucketed), use its recorded region; only
+    fall back to Domestic when the raw value has no region info at all.
     """
     if overrides and isinstance(raw_value, str):
         key = normalize_loose(raw_value)
         if key in overrides:
-            return None if overrides[key] == EXCLUDED else "Domestic"
+            if overrides[key] == EXCLUDED:
+                return None
+            region = map_region(raw_value)
+            if region:
+                return region
+            return "International" if any(hint in key for hint in INTERNATIONAL_HINTS) else "Domestic"
     return map_region(raw_value)
 
 

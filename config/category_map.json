@@ -35,6 +35,10 @@
     "bucket": "CPR",
     "region": "Domestic"
   },
+  "cpr26": {
+    "bucket": "CPR",
+    "region": "Domestic"
+  },
   "cprafroasian": {
     "bucket": "CPR",
     "region": "International"
