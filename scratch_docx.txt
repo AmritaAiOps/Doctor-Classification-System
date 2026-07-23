@@ -1,0 +1,150 @@
+Daily HIS Report Automation — Documentation
+This document describes, file by file, the exact manual steps currently performed to build the “Final output” daily report, so the same logic can be converted into code without any logic mistakes.
+⚠ STATUS: NOT YET FINAL — See Section 13 for Final output rows that still have no confirmed source or logic.
+0. Inputs
+8 files downloaded from HIS + 1 file received by email:
+A separate reference sheet, Category Codes, maps raw “Category” values to standard buckets. The end target is one sheet, Final output, with 4 blocks: Occupancy, Volumes, Billing (INR), Collection (INR).
+1. OP New Registration (Patient Registration Collection)
+Rename file/sheet to OP New Registration.
+Count total non-blank rows in the MRD Number column.
+Paste this count → Final output → “OP New Registration” row.
+2. OP Encounters (Encounter Report)
+Keep only these 4 columns: S.No, Report Total, Speciality, Total Encounters. Delete all other columns.
+     Note: Column alignment may shift after this step — re-check before counting.
+Delete any row where Speciality/location is one of the following:
+Radiology
+Njarakkal Health Center
+Amrita Urban Health Centre, Kaloor
+Amrita Labs
+Amrita Lab Trivandrum
+Amrita Health Centre Palluruthy
+Amrita Centre For Advanced Dental Care
+Count remaining MRD total.
+Paste this count → Final output → “OP Encounters” row.
+3. Category Mapping (shared logic used in Sections 4, 6, 7, 8, 9)
+This is the single shared lookup used everywhere a “CAT” column is added across all reports.
+Source: Category Codes sheet (Domestic + International blocks).
+Important naming note:
+The bucket called "CPR" in the Category Codes sheet is the same as "Corporates" in the Final output. CPR is the short form of Corporates. These are the same bucket — named differently between the source data and the Final output.
+Matching rule: Compare the raw Category column value against the lists below. Match is case and space insensitive. Tag the row’s CAT column with the matching bucket name.
+Domestic Categories
+International Categories
+Unmapped categories: If a Category value matches none of the above, do not hard-fail. Leave that row’s CAT blank/uncounted and flag for review. This matches current manual behavior.
+4. IP Admission (Detailed Admission Report)
+Add a new column “CAT”.
+For each row, look up the Category column against Section 3 mapping. Domestic + International lists are merged here — this file does not separate them. Write the bucket name into CAT.
+Count rows per bucket and the overall total.
+Paste counts → Final output → “IP Admission” block:
+Sum of the above 5 values = total IP Admission row.
+5. Admission Analysis Report
+No column transformation needed. Read 3 existing total values and paste directly:
+6. IP Discharges (Discharge Patient Report)
+Same steps as Section 4, applied to this file:
+Add “CAT” column using the Section 3 mapping.
+Count per bucket: General, TPA, ECHS, P CARD FUND, CPR.
+Paste → Final output → “IP Discharges” block (same 5 sub-rows as IP Admission, with CPR → Corporates).
+7. Total Bill Wise Report (Billing INR OP)
+Filter the Bill column: keep only rows where value = “O_B”.
+Add column “Net” = TotalAmt − DiscAmt.
+Add column “CAT” using the Section 3 mapping against the Category column.
+Add column “Cash/Credit”: if Category = “General” → Cash. All other categories → Credit.
+Add column “International/Domestic”: compare Category against Section 3 lists and tag accordingly.
+Sum the Net column → Final output → “OP” row under Billing (INR).
+Save updated file as: Total Bill Wise dd-mm-yyyy (today’s date).
+8. Discharge Wise IP Revenue Report (Billing INR IP)
+Filter the Bill column: keep only rows where value = “IP_D” or “IP_F”.
+Add column “Net” = TotalAmt − DiscAmt.
+Add column “Cash/Credit” (same rule as Section 7).
+Add column “International/Domestic” (same rule as Section 7).
+Remove the “Time” column.
+Sum the Net column → Final output → “IP” row under Billing (INR).
+Final output → “Total Billing” = OP (Section 7) + IP (this section).
+Save updated file as: Discharge Wise dd-mm-yyyy (today’s date).
+9. Combined Billing File (Total Bill Wise + Discharge Wise IP)
+Stack both files into one combined sheet: Total Bill Wise rows first, then one yellow-highlighted separator row, then Discharge Wise IP rows. Column names are identical in both — verify before stacking.
+From the combined sheet, compute Net column sums for the Billing (INR) block:
+Cash (IP & OP) block:
+Credit (IP & OP) block:
+10. AEPL Billing (Credit Posted Items from AEPL to AIMS)
+Filter the “Aims Bill Number” column; delete any row where the value contains “NN” or “NP”.
+Compute: Total of “Posted Debit Amt” − Total of “Posted Credit Amt”.
+Paste this value → Final output → “AEPL Billing (Collection thru’ AIMS)” row.
+11. Bed Occupancy Report (emailed)
+Delete rows where the Category column is any of: NURSERY, Operation Theatre, Labour, Day Case A, Daycase Bed, EM Unit.
+Sum the remaining “Beds Occupied” column.
+Paste to Final output:
+Bed Strength = 1000 (fixed constant, always — not from source data).
+Beds Occupied = sum from step 2.
+Occupancy % = Beds Occupied ÷ 1000.
+12. Final Output — Row Structure
+The Final output sheet has a fixed structure. Main headings, sub-rows, and their order never change between days. Only the values are updated daily. Code should use hardcoded row numbers to write each value. There is no risk of row mismatch.
+(Exact row numbers for each metric to be mapped once the Final output sheet is handed to the developer.)
+13. ⚠ NOT YET FINAL — Rows in Final Output With No Source Logic Defined
+The rows below appear in the Final output sheet but are NOT covered by any of the 9 source files described in this document. Their source file, filter logic, and calculation are unknown. Do not guess or assume these — each one must be walked through manually before coding begins.
+Action needed: For each row above, explain which HIS report it comes from, what filter is applied, and what calculation is used — the same way Sections 1–11 are written. Then this document can be updated and marked final.
+---TABLE---
+# | HIS File Name | Internal Reference Name
+1 | Patient Registration Collection | OP New Registration
+2 | Encounter Report | OP Encounters
+3 | Detailed Admission Report | IP Admission
+4 | Admission Analysis Report | Admission Analysis
+5 | Discharge Patient Report | IP Discharges
+6 | Total Billing Report | Billing INR OP
+7 | Discharge Wise IP Report | Billing INR IP
+8 | Credit Posted Items (AEPL → AIMS) | AEPL Billing
+9 | Bed Occupancy Report (emailed) | Bed Occupancy
+---TABLE---
+CAT Bucket | Final output label | Raw Category values that map to this bucket
+CPR | Corporates | CPR, CPR 25, CPR.1, CPR 24, CPR-Self, LABCPR 26, labcprop.1, LABCPROP25, LABCPROP26
+General | General | ASK, Dental faculty, Dental PG, Dental student, DEP, FDM, FDM-AMP, FDM-AMP(W), FM, GNL, INHS GNL, INHS 2025, PH centre, PM fund, Study faculty, Thesis, MCS, NCS, GNL - SD, GNL -SRV
+ECHS | ECHS/ESI /INHS/ISRO/CIAL | CHSS, CHSS 2023, CIAL GNL, CIAL-CISF, ECHS, ECHS 2025, ESI, ESI - 2021, ESI - 2025, Ex-servicemen
+TPA | TPA | EMP, EMP-TPA, SSV-TPA, TPA, TPA 24
+P CARD FUND | P.Card.Fund | P CARD FUND
+---TABLE---
+CAT Bucket | Final output label | Raw Category values that map to this bucket
+CPR | Corporates | CPR-Afroasian, CPR - Oman, CPR- Saarc - Self
+TPA | TPA | TPA - AASANTHA 25, TPA-AASANDHA
+General | General | DEP-Afroasian, DEP - Maldives, DEP - Oman, DEP - SAARC, DEP - Westerners and Mid Easterners, GNL - Aasandha, GNL -Westerners and Mid Easterners, GNL - Oman, GNL-SAARC
+---TABLE---
+CAT bucket | Final output sub-row label
+General | General
+TPA | TPA
+ECHS | ECHS/ESI /INHS/ISRO/CIAL
+P CARD FUND | P.Card.Fund
+CPR | Corporates
+---TABLE---
+Source column in file | Final output row
+Total Emergency Admission | Emergency Admission
+Total Planned Admission | Planned Admission
+Total admission from OP | Admission from OP (walk-in)
+---TABLE---
+Filter applied | Final output row
+Domestic only | Domestic
+International only | International
+Domestic + International | Total Billing
+---TABLE---
+Filter applied | Final output row
+Cash, Domestic | Domestic
+Cash, International | International
+---TABLE---
+Filter applied | Final output row
+Credit, Domestic, CAT = ECHS | ECHS/ESI /INHS/ISRO/CIAL
+Credit, Domestic, CAT = P CARD FUND | P.Card.Fund
+Credit, Domestic, CAT = TPA | TPA
+Credit, Domestic, CAT = CPR | Corporates
+Credit, Domestic (all combined) | Domestic
+Credit, International, CAT = TPA | TPA Aasandha
+Credit, International, CAT = CPR | Corporates (International)
+Credit, International (all combined) | International
+Grand total of all Credit rows | Total Billing
+---TABLE---
+Final output row | Block | Status
+Long Stay Patients | Volumes | ❌ Source file and logic unknown
+Cash (including IP advances) | Collection (INR) | ❌ Source file unknown
+Credit Card | Collection (INR) | ❌ Source file unknown
+Bank | Collection (INR) | ❌ Source file unknown
+Other Income (Bank Interest) | Collection (INR) | ❌ Source file unknown
+Less: Patients Refunds through Cash | Collection (INR) | ❌ Source file unknown
+Less: Patients Refunds through Bank | Collection (INR) | ❌ Source file unknown
+Total Collection | Collection (INR) | ❌ Depends on all above — formula unknown until sources confirmed
+Hospital Revenue (Net of AEPL) | Between AEPL Billing & Collection | Likely = Total Billing − AEPL Billing, but must be confirmed before coding
