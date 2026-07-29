@@ -78,6 +78,21 @@ DERIVED_FORMULA_ROWS = {
 UNAVAILABLE = "—"  # em dash shown when a month has no recorded days at all
 
 
+# Fractional metrics (e.g. 0.967 shown as "97%") -- rounding these to a whole
+# number would collapse them to 0 or 1, so they're excluded from _whole().
+PERCENT_KEYS = {"Occupancy %"}
+
+
+def _whole(value, key=None):
+    """Rounds numeric values to whole numbers; leaves non-numbers (e.g. UNAVAILABLE)
+    and percent-style keys untouched."""
+    if key in PERCENT_KEYS:
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return round(value)
+    return value
+
+
 def _copy_column_style(ws, source_col: int, dest_cols) -> None:
     """openpyxl's insert_cols() leaves new cells unstyled -- clone font,
     border, fill, alignment and number format from a neighboring column so
@@ -128,8 +143,8 @@ def _finalize_prior_months(ws, finalized_months: dict) -> int:
                 ws.cell(row=row, column=part_idx).value = UNAVAILABLE
                 ws.cell(row=row, column=part_idx + 1).value = UNAVAILABLE
             elif key in finalized:
-                ws.cell(row=row, column=part_idx).value = finalized[key]["daily_avg"]
-                ws.cell(row=row, column=part_idx + 1).value = finalized[key]["mtd"]
+                ws.cell(row=row, column=part_idx).value = _whole(finalized[key]["daily_avg"], key)
+                ws.cell(row=row, column=part_idx + 1).value = _whole(finalized[key]["mtd"], key)
         part_idx += 2
     return part_idx
 
@@ -203,14 +218,14 @@ def write_final_output(
         if key not in values:
             logger.warning("write_final_output: missing value for %r (row %d); leaving cell untouched.", key, row)
             continue
-        ws[f"{date_column}{row}"] = values[key]
+        ws[f"{date_column}{row}"] = _whole(values[key], key)
 
         if month_gated:
             ws[f"{daily_avg_column}{row}"] = UNAVAILABLE
             ws[f"{mtd_proj_column}{row}"] = UNAVAILABLE
         elif mtd_columns and key in mtd_columns:
-            ws[f"{daily_avg_column}{row}"] = mtd_columns[key]["daily_avg"]
-            ws[f"{mtd_proj_column}{row}"] = mtd_columns[key]["mtd_proj"]
+            ws[f"{daily_avg_column}{row}"] = _whole(mtd_columns[key]["daily_avg"], key)
+            ws[f"{mtd_proj_column}{row}"] = _whole(mtd_columns[key]["mtd_proj"], key)
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     wb.save(output_path)

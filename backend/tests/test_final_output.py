@@ -24,7 +24,7 @@ def test_write_final_output_writes_known_rows(template_path, tmp_path):
     values = {
         "Bed Strength": 1000,
         "Beds Occupied": 966,
-        "OP Billing": 9923868.6,
+        "OP Billing": 9923868.6,  # rounded to a whole number on write
         "Long Stay Patients": 14,
     }
     output_path = tmp_path / "output.xlsx"
@@ -34,7 +34,7 @@ def test_write_final_output_writes_known_rows(template_path, tmp_path):
     ws = wb[SHEET_NAME]
     assert ws["F4"].value == 1000
     assert ws["F5"].value == 966
-    assert ws["F32"].value == 9923868.6
+    assert ws["F32"].value == 9923869
     assert ws["F29"].value == 14
 
 
@@ -80,7 +80,7 @@ def test_write_final_output_writes_daily_avg_and_mtd_proj_columns(template_path,
     values = {"Bed Strength": 1000, "Beds Occupied": 1028}
     mtd_columns = {
         "Bed Strength": {"daily_avg": 1000, "mtd_proj": 1000},
-        "Beds Occupied": {"daily_avg": 964.5, "mtd_proj": 964.5},
+        "Beds Occupied": {"daily_avg": 964.6, "mtd_proj": 964.6},
     }
     output_path = tmp_path / "output.xlsx"
     write_final_output(template_path, output_path, values, date_column="F", mtd_columns=mtd_columns)
@@ -90,8 +90,8 @@ def test_write_final_output_writes_daily_avg_and_mtd_proj_columns(template_path,
     # date_column="F" -> Daily Average in G, MTD (Proj) in H
     assert ws["G4"].value == 1000
     assert ws["H4"].value == 1000
-    assert ws["G5"].value == 964.5
-    assert ws["H5"].value == 964.5
+    assert ws["G5"].value == 965  # rounded to a whole number
+    assert ws["H5"].value == 965
 
 
 def test_write_final_output_skips_gh_columns_when_mtd_columns_omitted(template_path, tmp_path):

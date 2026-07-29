@@ -2,6 +2,7 @@
 built React UI) on a local port, then show it in a native window via
 pywebview. Closing the window quits the app. Fully offline -- no internet.
 """
+import os
 import socket
 import threading
 import time
@@ -40,6 +41,10 @@ class Api:
     def choose_folder(self):
         result = webview.windows[0].create_file_dialog(webview.FOLDER_DIALOG)
         return result[0] if result else None
+
+    def open_folder(self, path):
+        os.makedirs(path, exist_ok=True)  # first run: nothing's been saved there yet
+        os.startfile(path)
 
 
 def main():

@@ -20,11 +20,11 @@ def _find_column(df: pd.DataFrame, expected_name: str) -> str:
     for col in df.columns:
         if target in _normalize_header(str(col)):
             return col
-    raise KeyError(f"Column matching {expected_name!r} not found. Available: {list(df.columns)}")
+    raise ValueError(f"Column matching {expected_name!r} not found. Available: {list(df.columns)}")
 
 
 def process_aepl_billing(df: pd.DataFrame) -> float:
-    bill_number_col = _find_column(df, "Aims Bill Number")
+    bill_number_col = _find_column(df, "AEPL Bill No")
     debit_col = _find_column(df, "Posted Debit")
     credit_col = _find_column(df, "Posted Credit")
 

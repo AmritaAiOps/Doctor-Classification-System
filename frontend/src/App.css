@@ -441,6 +441,11 @@ body {
   border-color: var(--amber-500);
 }
 
+.banner--success {
+  background: var(--green-100);
+  border-color: var(--green-500);
+}
+
 .banner--compact {
   padding: 10px 14px;
   margin-bottom: 12px;

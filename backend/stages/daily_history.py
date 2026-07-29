@@ -12,6 +12,7 @@ this app. A month that started before this tool was in use will show a
 partial MTD (missing the days before tracking began), not the true
 month-to-date total -- there's no way to backfill days we never received.
 """
+import calendar
 import json
 from pathlib import Path
 
@@ -35,14 +36,47 @@ def month_key(report_date) -> str:
     return report_date.strftime("%Y-%m")
 
 
+def _is_valid_day_for_month(month: str, day) -> bool:
+    """True only if `day` is a real calendar day for the "YYYY-MM" string
+    `month` -- i.e. this entry is actually self-consistent, not just nested
+    under a month key by coincidence.
+
+    Storage nests day-of-month under a month key (history[month][metric][day]),
+    but that nesting is just dict structure -- nothing about it guarantees the
+    day is a real day of that month. A single record_day() call can't produce
+    a mismatch (both pieces come from the same `date` object), but nothing
+    stops a future caller, a hand-edit of daily_history.json, or a merge/
+    migration from inserting a day under the wrong month bucket (e.g. day 30
+    under a February, or a day meant for one month landing under another).
+    Without this check, get_month_series/get_month_records would sum such an
+    entry into that month's MTD/Daily Average with no warning at all. Both the
+    write path (record_day) and the read path (get_month_series,
+    history_store.get_month_records) enforce this so a mis-filed entry is
+    rejected/excluded instead of silently corrupting a figure.
+    """
+    try:
+        year, mon = (int(part) for part in month.split("-"))
+        day = int(day)
+    except (ValueError, AttributeError, TypeError):
+        return False
+    return 1 <= day <= calendar.monthrange(year, mon)[1]
+
+
 def record_day(report_date, values: dict, metric_keys: list) -> dict:
     """Stores today's value for each of metric_keys under this month, keyed
     by day-of-month. Re-processing the same date overwrites that day's entry
     rather than double-counting it. Returns the updated history.
+
+    Raises ValueError if the (month, day) pair being written isn't a real
+    calendar date -- this should never trip given a real `date` object, but
+    turns the month/day relationship into an enforced invariant rather than
+    an accident of always being called correctly.
     """
     history = load_history()
     month = month_key(report_date)
     day = str(report_date.day)
+    if not _is_valid_day_for_month(month, day):
+        raise ValueError(f"Refusing to record day {day!r} under month {month!r}: not a valid calendar date.")
 
     month_history = history.setdefault(month, {})
     for key in metric_keys:
@@ -60,11 +94,15 @@ def get_month_series(history: dict, report_date, metric_key: str) -> dict:
     report_date that has a recorded value for metric_key. Missing days are
     simply absent (not assumed to be zero for display, but contribute
     nothing to a sum).
+
+    Entries whose day isn't actually a valid calendar day for this month
+    (e.g. a mis-filed or corrupted entry) are excluded rather than trusted,
+    so they can never silently inflate/deflate the MTD sum or Daily Average.
     """
     month = month_key(report_date)
     metric_series = history.get(month, {}).get(metric_key, {})
     return {
         int(day): value
         for day, value in metric_series.items()
-        if int(day) <= report_date.day
+        if _is_valid_day_for_month(month, day) and int(day) <= report_date.day
     }

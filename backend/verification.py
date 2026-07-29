@@ -63,7 +63,7 @@ def _find_column(df, expected_name):
     for col in df.columns:
         if normalize_alnum(str(col)).startswith(target):
             return col
-    raise KeyError(f"Column matching {expected_name!r} not found.")
+    raise ValueError(f"Column matching {expected_name!r} not found.")
 
 
 def _check(name, expected, actual):

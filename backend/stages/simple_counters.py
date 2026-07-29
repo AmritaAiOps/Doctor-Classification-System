@@ -40,7 +40,7 @@ def _find_column(df: pd.DataFrame, expected_name: str) -> str:
     for col in df.columns:
         if _normalize_header(str(col)) == target:
             return col
-    raise KeyError(f"Column matching {expected_name!r} not found. Available: {list(df.columns)}")
+    raise ValueError(f"Column matching {expected_name!r} not found. Available: {list(df.columns)}")
 
 
 def process_op_new_registration(df: pd.DataFrame) -> int:

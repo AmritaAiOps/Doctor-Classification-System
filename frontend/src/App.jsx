@@ -26,6 +26,8 @@ function App() {
   const [progress, setProgress] = useState(0)
   const [result, setResult] = useState(null)
   const [errorInfo, setErrorInfo] = useState(null)
+  const [downloadStatus, setDownloadStatus] = useState(null) // null | 'success' | 'error'
+  const [downloading, setDownloading] = useState(false)
   const stepTimer = useRef(null)
   const progressTimer = useRef(null)
 
@@ -62,6 +64,19 @@ function App() {
       setOutputDir(data.output_dir)
     } catch {
       setSettingsError('Could not reach the server to save that setting.')
+    }
+  }
+
+  async function handleOpenFolder() {
+    if (!window.pywebview?.api?.open_folder) {
+      setSettingsError('Opening the folder is only available in the desktop app.')
+      return
+    }
+    setSettingsError(null)
+    try {
+      await window.pywebview.api.open_folder(outputDir)
+    } catch {
+      setSettingsError('Could not open that folder.')
     }
   }
 
@@ -225,6 +240,31 @@ function App() {
     }
   }
 
+  async function handleDownload() {
+    setDownloading(true)
+    setDownloadStatus(null)
+    try {
+      const res = await fetch(result.download_url)
+      if (!res.ok) throw new Error('download failed')
+      const blob = await res.blob()
+
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'Final output.xlsx'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+
+      setDownloadStatus('success')
+    } catch {
+      setDownloadStatus('error')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   async function handleAcceptCategories(resolutions) {
     try {
       const res = await fetch('/category-review/resolve', {
@@ -314,6 +354,14 @@ function App() {
             <span className="settings-panel__path" title={outputDir}>{outputDir || 'Loading…'}</span>
             <button
               type="button"
+              className="button button--tiny button--secondary"
+              disabled={!outputDir}
+              onClick={handleOpenFolder}
+            >
+              Open folder
+            </button>
+            <button
+              type="button"
               className="button button--tiny button--primary"
               disabled={browsing}
               onClick={handleBrowse}
@@ -357,10 +405,20 @@ function App() {
               </ul>
             </div>
           )}
+          {downloadStatus === 'success' && (
+            <div className="banner banner--success banner--compact">
+              <div className="banner__body">Final output.xlsx downloaded successfully.</div>
+            </div>
+          )}
+          {downloadStatus === 'error' && (
+            <div className="banner banner--error banner--compact">
+              <div className="banner__body">Download failed. Check your connection and try again.</div>
+            </div>
+          )}
           <div className="result-actions">
-            <a className="button button--primary" href={result.download_url} download>
-              Download Final output.xlsx
-            </a>
+            <button className="button button--primary" disabled={downloading} onClick={handleDownload}>
+              {downloading ? 'Downloading…' : 'Download Final output.xlsx'}
+            </button>
             <button className="button button--secondary" onClick={handleReset}>
               Start over
             </button>

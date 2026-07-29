@@ -42,7 +42,6 @@ def finalize_month(year: int, month: int):
     records = history_store.get_month_records(year, month)
     if not records:
         return None
-    days_in_month = calendar.monthrange(year, month)[1]
     per_metric = {}
     for rec in records:
         for key, value in rec["values"].items():
@@ -56,5 +55,5 @@ def finalize_month(year: int, month: int):
             out[key] = {"daily_avg": avg, "mtd": avg}
         else:
             total = sum(vals)
-            out[key] = {"daily_avg": total / days_in_month, "mtd": total}
+            out[key] = {"daily_avg": total / len(vals), "mtd": total}
     return out

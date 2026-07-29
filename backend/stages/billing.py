@@ -25,7 +25,7 @@ def _find_column(df: pd.DataFrame, expected_name: str, required: bool = True):
         if _normalize_header(str(col)).startswith(target):
             return col
     if required:
-        raise KeyError(f"Column matching {expected_name!r} not found. Available: {list(df.columns)}")
+        raise ValueError(f"Column matching {expected_name!r} not found. Available: {list(df.columns)}")
     return None
 
 
