@@ -11,7 +11,7 @@ echo 2/3 Installing Python + build deps (isolated venv)...
 REM Build inside a dedicated venv so PyInstaller only ever sees the app's real
 REM dependencies -- not whatever heavy packages (torch, etc.) happen to be in
 REM the global environment. Keeps the build fast and the exe small.
-if not exist .venv python -m venv .venv || goto :fail
+if not exist .venv py -3 -m venv .venv || goto :fail
 call .venv\Scripts\activate.bat || goto :fail
 python -m pip install -r requirements.txt pyinstaller pywebview || goto :fail
 
