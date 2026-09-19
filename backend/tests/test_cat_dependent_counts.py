@@ -73,6 +73,35 @@ def test_process_ip_admission_applies_overrides():
     assert result["category_review"]["possible_matches"] == []
 
 
+def test_process_ip_admission_excludes_admission_ward_rows():
+    df = pd.DataFrame({
+        "Category": ["GNL", "GNL", "TPA", "ECHS"],
+        "Ward": ["Admission Ward", "B-General Male", "Admission Ward", "ICU"],
+    })
+    result = process_ip_admission(df)
+    assert result["General"] == 1
+    assert result["TPA"] == 0
+    assert result["ECHS"] == 1
+    assert result["Total"] == 2
+
+
+def test_process_ip_discharges_excludes_admission_ward_rows_case_and_space_insensitive():
+    df = pd.DataFrame({
+        "Cate\ngory": ["GNL", "TPA", "GNL"],
+        "Ward": ["admission ward", "  ADMISSION   WARD  ", "DL"],
+    })
+    result = process_ip_discharges(df)
+    assert result["General"] == 1
+    assert result["TPA"] == 0
+    assert result["Total"] == 1
+
+
+def test_process_ip_admission_without_ward_column_is_unaffected():
+    df = _sample_df()
+    result = process_ip_admission(df)
+    assert result["Total"] == 5
+
+
 def test_process_ip_admission_flags_fuzzy_near_miss_as_possible_match():
     # "ESI2025" (no punctuation) loosely normalizes the same as the mapped
     # "ESI - 2025" so it's an exact match now; "ESSI2025" (extra letter)
