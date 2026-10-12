@@ -74,6 +74,7 @@ _SHIPPED_CONFIG = [
     "category_map.json",
     "daily_history.json",
     "learned_overrides.json",
+    "daycare_rules.json",
     "final_output_template.xlsx",
 ]
 

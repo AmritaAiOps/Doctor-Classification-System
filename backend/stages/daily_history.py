@@ -51,7 +51,7 @@ def _is_valid_day_for_month(month: str, day) -> bool:
     Without this check, get_month_series/get_month_records would sum such an
     entry into that month's MTD/Daily Average with no warning at all. Both the
     write path (record_day) and the read path (get_month_series,
-    history_store.get_month_records) enforce this so a mis-filed entry is
+    get_month_records) enforce this so a mis-filed entry is
     rejected/excluded instead of silently corrupting a figure.
     """
     try:
@@ -106,3 +106,15 @@ def get_month_series(history: dict, report_date, metric_key: str) -> dict:
         for day, value in metric_series.items()
         if _is_valid_day_for_month(month, day) and int(day) <= report_date.day
     }
+
+
+def get_month_records(year: int, month: int) -> list:
+    """One dict per recorded day: {"day": int, "values": {metric_key: value}}.
+    Mis-filed days (see _is_valid_day_for_month) are excluded."""
+    month_str = f"{year:04d}-{month:02d}"
+    month_data = load_history().get(month_str, {})
+    days = sorted({int(d) for series in month_data.values() for d in series if _is_valid_day_for_month(month_str, d)})
+    return [
+        {"day": day, "values": {k: s[str(day)] for k, s in month_data.items() if str(day) in s}}
+        for day in days
+    ]

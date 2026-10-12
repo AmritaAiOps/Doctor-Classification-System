@@ -73,27 +73,17 @@ def test_process_ip_admission_applies_overrides():
     assert result["category_review"]["possible_matches"] == []
 
 
-def test_process_ip_admission_excludes_admission_ward_rows():
+def test_ip_admission_counts_admission_ward_rows():
+    # the documented logic has no ward exclusion -- every categorised row counts
     df = pd.DataFrame({
-        "Category": ["GNL", "GNL", "TPA", "ECHS"],
-        "Ward": ["Admission Ward", "B-General Male", "Admission Ward", "ICU"],
+        "Category": ["GNL", "GNL", "TPA", "ECHS", None],
+        "Ward": ["Admission Ward", "B-General Male", "Admission Ward", "ICU", None],
     })
     result = process_ip_admission(df)
-    assert result["General"] == 1
-    assert result["TPA"] == 0
-    assert result["ECHS"] == 1
-    assert result["Total"] == 2
-
-
-def test_process_ip_discharges_excludes_admission_ward_rows_case_and_space_insensitive():
-    df = pd.DataFrame({
-        "Cate\ngory": ["GNL", "TPA", "GNL"],
-        "Ward": ["admission ward", "  ADMISSION   WARD  ", "DL"],
-    })
-    result = process_ip_discharges(df)
-    assert result["General"] == 1
-    assert result["TPA"] == 0
-    assert result["Total"] == 1
+    assert result["General"] == 2
+    assert result["TPA"] == 1
+    assert result["Total"] == 4
+    assert result["category_review"]["unmatched"] == []
 
 
 def test_process_ip_admission_without_ward_column_is_unaffected():

@@ -8,7 +8,6 @@ import io
 import pandas as pd
 
 from backend.stages.detection import find_header_row
-from backend.stages.reports import RAW_POSITIONAL_REPORTS
 
 CANDIDATE_ID_SEPARATOR = "::"
 
@@ -30,7 +29,7 @@ def load_report_dataframe(excel_file: pd.ExcelFile, sheet_name: str, report_type
     'Speciality'/'Total Encounters' label rows a normal header parse would
     otherwise consume. Every other report uses its detected header row.
     """
-    if report_type in RAW_POSITIONAL_REPORTS:
+    if report_type == "OP Encounters":  # scanned row-by-row positionally, so no header offset
         return excel_file.parse(sheet_name=sheet_name, header=None)
 
     preview = excel_file.parse(sheet_name=sheet_name, header=None, nrows=10)

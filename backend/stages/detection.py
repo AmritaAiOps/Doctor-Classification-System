@@ -202,6 +202,19 @@ def detect_report_type(sheet_name: str, rows) -> dict:
     curated = is_curated_billing_sheet(header_row)
 
     sheet_match = _match_by_sheet_name(sheet_name)
+    column_matches = _match_by_columns(header_row)
+    # Name says one report but the columns clearly say another: trust the rows,
+    # and report the disagreement so the caller can mention it (non-blocking).
+    if sheet_match and column_matches and sheet_match not in column_matches:
+        return {
+            "report_type": column_matches[0],
+            "report_types": column_matches,
+            "confidence": "medium",
+            "matched_via": "columns",
+            "header_row": header_row_idx,
+            "curated": curated,
+            "name_conflict": sheet_match,
+        }
     if sheet_match:
         return {
             "report_type": sheet_match,
@@ -212,7 +225,6 @@ def detect_report_type(sheet_name: str, rows) -> dict:
             "curated": curated,
         }
 
-    column_matches = _match_by_columns(header_row)
     if column_matches:
         return {
             "report_type": column_matches[0],

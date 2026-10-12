@@ -2,7 +2,6 @@ import datetime
 
 import pytest
 
-from backend import history_store
 from backend.monthly_average import compute_month_column, finalize_month
 from backend.stages import daily_history
 
@@ -13,14 +12,14 @@ def isolated_history(tmp_path, monkeypatch):
 
 
 def _save(y, m, d, total_billing):
-    history_store.save_daily_snapshot(datetime.date(y, m, d), {34: total_billing})
+    daily_history.record_day(datetime.date(y, m, d), {"Total Billing": total_billing}, ["Total Billing"])
 
 
 def test_snapshot_round_trip():
     _save(2026, 6, 1, 500.0)
-    records = history_store.get_month_records(2026, 6)
+    records = daily_history.get_month_records(2026, 6)
     assert records == [{"day": 1, "values": {"Total Billing": 500.0}}]
-    assert history_store.get_month_records(2026, 5) == []
+    assert daily_history.get_month_records(2026, 5) == []
 
 
 def test_month_without_day_one_still_averages_recorded_days():
@@ -68,7 +67,7 @@ def test_finalize_month_excludes_entry_mis_filed_under_wrong_month(tmp_path, mon
     history["2026-02"]["Total Billing"]["30"] = 99999.0
     daily_history.save_history(history)
 
-    records = history_store.get_month_records(2026, 2)
+    records = daily_history.get_month_records(2026, 2)
     assert records == [
         {"day": 1, "values": {"Total Billing": 100.0}},
         {"day": 15, "values": {"Total Billing": 200.0}},

@@ -7,7 +7,7 @@ Only a month with zero recorded days at all has nothing to show.
 """
 import calendar
 
-from backend import history_store
+from backend.stages.daily_history import get_month_records
 from backend.stages.mtd import AVERAGE_KEYS, CONSTANT_KEYS
 
 
@@ -18,7 +18,7 @@ def compute_month_column(report_date, metric_key: str = "Total Billing"):
     year, month = report_date.year, report_date.month
     values = {
         rec["day"]: rec["values"][metric_key]
-        for rec in history_store.get_month_records(year, month)
+        for rec in get_month_records(year, month)
         if rec["day"] <= report_date.day and metric_key in rec["values"]
     }
     if not values:
@@ -39,7 +39,7 @@ def finalize_month(year: int, month: int):
     """Static 2-col figures for a completed month:
     {metric_key: {"daily_avg", "mtd"}}, or None when no days were recorded
     at all this month."""
-    records = history_store.get_month_records(year, month)
+    records = get_month_records(year, month)
     if not records:
         return None
     per_metric = {}

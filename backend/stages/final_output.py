@@ -5,6 +5,7 @@ in a single caller-specified date column. Every row is now resolved -- Long
 Stay Patients (row 29) was the last one, computed from the IP Discharges file.
 """
 import calendar
+import math
 import logging
 from copy import copy
 from pathlib import Path
@@ -89,7 +90,8 @@ def _whole(value, key=None):
     if key in PERCENT_KEYS:
         return value
     if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return round(value)
+        # half-up like Excel (Python's round() is half-to-even: 4208.5 -> 4208)
+        return math.floor(abs(value) + 0.5) * (1 if value >= 0 else -1)
     return value
 
 
@@ -204,28 +206,25 @@ def write_final_output(
             if positive_key not in KEY_TO_ROW or negative_key not in KEY_TO_ROW:
                 logger.warning("write_final_output: cannot build formula for %r; missing row mapping.", key)
                 continue
-            positive_row, negative_row = KEY_TO_ROW[positive_key], KEY_TO_ROW[negative_key]
+            pos, neg = KEY_TO_ROW[positive_key], KEY_TO_ROW[negative_key]
+            # same subtraction in every column, referencing that column's own rows
+            cells = {col: f"={col}{pos}-{col}{neg}" for col in (date_column, daily_avg_column, mtd_proj_column)}
+            if not mtd_columns:
+                cells[daily_avg_column] = cells[mtd_proj_column] = UNAVAILABLE if month_gated else None
+        else:
+            if key not in values:
+                logger.warning("write_final_output: missing value for %r (row %d); leaving cell untouched.", key, row)
+                continue
+            cells = {date_column: _whole(values[key], key), daily_avg_column: None, mtd_proj_column: None}
+            if month_gated:
+                cells[daily_avg_column] = cells[mtd_proj_column] = UNAVAILABLE
+            elif mtd_columns and key in mtd_columns:
+                cells[daily_avg_column] = _whole(mtd_columns[key]["daily_avg"], key)
+                cells[mtd_proj_column] = _whole(mtd_columns[key]["mtd_proj"], key)
 
-            ws[f"{date_column}{row}"] = f"={date_column}{positive_row}-{date_column}{negative_row}"
-            if mtd_columns:
-                ws[f"{daily_avg_column}{row}"] = f"={daily_avg_column}{positive_row}-{daily_avg_column}{negative_row}"
-                ws[f"{mtd_proj_column}{row}"] = f"={mtd_proj_column}{positive_row}-{mtd_proj_column}{negative_row}"
-            elif month_gated:
-                ws[f"{daily_avg_column}{row}"] = UNAVAILABLE
-                ws[f"{mtd_proj_column}{row}"] = UNAVAILABLE
-            continue
-
-        if key not in values:
-            logger.warning("write_final_output: missing value for %r (row %d); leaving cell untouched.", key, row)
-            continue
-        ws[f"{date_column}{row}"] = _whole(values[key], key)
-
-        if month_gated:
-            ws[f"{daily_avg_column}{row}"] = UNAVAILABLE
-            ws[f"{mtd_proj_column}{row}"] = UNAVAILABLE
-        elif mtd_columns and key in mtd_columns:
-            ws[f"{daily_avg_column}{row}"] = _whole(mtd_columns[key]["daily_avg"], key)
-            ws[f"{mtd_proj_column}{row}"] = _whole(mtd_columns[key]["mtd_proj"], key)
+        for col, value in cells.items():
+            if value is not None:
+                ws[f"{col}{row}"] = value
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     wb.save(output_path)

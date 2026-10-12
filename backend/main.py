@@ -143,6 +143,7 @@ def _build_output_file(values: dict, report_date) -> str:
 @app.post("/detect")
 async def detect(files: list[UploadFile] = File(...)):
     candidates = []
+    notes = []  # non-blocking suggestions shown to the user
     sheets_for_date_detection = []
     for upload in files:
         content = await upload.read()
@@ -177,6 +178,11 @@ async def detect(files: list[UploadFile] = File(...)):
                 if refined:
                     report_types = refined
 
+            if detection.get("name_conflict"):
+                notes.append(
+                    f"'{sheet_name}' in {upload.filename} is named like {detection['name_conflict']}, "
+                    f"but its columns look like {', '.join(report_types)} -- using the columns."
+                )
             candidates.append(
                 {
                     "id": make_candidate_id(upload.filename, sheet_name),
@@ -209,9 +215,25 @@ async def detect(files: list[UploadFile] = File(...)):
         for report_type in candidate["report_types"]:
             if report_type not in best_by_type:
                 type_order.append(report_type)
-            rank = (CONFIDENCE_RANK[candidate["confidence"]], candidate["curated"])
+            # a dedicated single-report sheet beats a combined OP+IP bill list on a tie
+            # (doc: IP comes from Discharge Wise, OP from Total Bill Wise)
+            rank = (CONFIDENCE_RANK[candidate["confidence"]], candidate["curated"], len(candidate["report_types"]) == 1)
             if report_type not in best_by_type or rank > best_by_type[report_type][0]:
                 best_by_type[report_type] = (rank, candidate)
+
+    for report_type in type_order:
+        top_rank, chosen = best_by_type[report_type]
+        rivals = [
+            c for c in candidates
+            if c is not chosen and report_type in c["report_types"]
+            and (CONFIDENCE_RANK[c["confidence"]], c["curated"], len(c["report_types"]) == 1) == top_rank
+        ]
+        if rivals:
+            others = ", ".join(f"{c['sheet_name']} ({c['source_file']})" for c in rivals)
+            notes.append(
+                f"{len(rivals) + 1} sheets look like {report_type}; using {chosen['sheet_name']} ({chosen['source_file']}). "
+                f"If that's wrong, pick another: {others}."
+            )
 
     matches = [
         {
@@ -238,6 +260,7 @@ async def detect(files: list[UploadFile] = File(...)):
         "missing": missing,
         "detected_date": detected_date,
         "date_conflict": filename_result["conflict"],
+        "notes": notes,
     }
 
 

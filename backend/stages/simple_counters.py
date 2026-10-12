@@ -6,6 +6,7 @@ import re
 
 import pandas as pd
 
+from backend.stages.columns import find_column as _find_column
 from backend.stages.row_cleaning import strip_junk_rows, extract_op_encounter_subtotals
 
 EXCLUDE_SPECIALITIES = [
@@ -32,15 +33,6 @@ def _normalize_header(name) -> str:
     if not isinstance(name, str):
         return ""
     return re.sub(r"\s+", "", name.strip().lower())
-
-
-def _find_column(df: pd.DataFrame, expected_name: str) -> str:
-    """Matches a column name ignoring case/whitespace/newline differences."""
-    target = _normalize_header(expected_name)
-    for col in df.columns:
-        if _normalize_header(str(col)) == target:
-            return col
-    raise ValueError(f"Column matching {expected_name!r} not found. Available: {list(df.columns)}")
 
 
 def process_op_new_registration(df: pd.DataFrame) -> int:

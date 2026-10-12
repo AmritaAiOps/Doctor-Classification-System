@@ -20,6 +20,7 @@ function App() {
   const [date, setDate] = useState('')
   const [dateAutoDetected, setDateAutoDetected] = useState(false)
   const [dateConflict, setDateConflict] = useState(false)
+  const [detectNotes, setDetectNotes] = useState([])
   const dateManuallySet = useRef(false)
   const [phase, setPhase] = useState('idle') // idle | processing | success | warning | error
   const [stepIndex, setStepIndex] = useState(0)
@@ -128,6 +129,7 @@ function App() {
       setAutoMatches(matchMap)
 
       setDateConflict(!!data.date_conflict)
+      setDetectNotes(data.notes || [])
       if (data.detected_date && !dateManuallySet.current) {
         setDate(data.detected_date)
         setDateAutoDetected(true)
@@ -321,6 +323,7 @@ function App() {
     setDate('')
     setDateAutoDetected(false)
     setDateConflict(false)
+    setDetectNotes([])
     dateManuallySet.current = false
     setPhase('idle')
     setResult(null)
@@ -454,6 +457,15 @@ function App() {
               <div className="banner banner--error banner--compact">
                 <div className="banner__body">
                   Uploaded files have conflicting dates in their filenames. Please confirm the correct report date manually.
+                </div>
+              </div>
+            )}
+            {detectNotes.length > 0 && (
+              <div className="banner banner--warning banner--compact">
+                <div className="banner__body">
+                  {detectNotes.map((n) => (
+                    <div key={n}>{n}</div>
+                  ))}
                 </div>
               </div>
             )}

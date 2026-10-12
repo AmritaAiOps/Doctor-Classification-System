@@ -18,6 +18,9 @@ from pathlib import Path
 
 import pandas as pd
 
+from functools import partial
+
+from backend.stages.columns import find_column
 from backend.stages.detection import normalize_alnum
 from backend.stages.row_cleaning import GROUP_START_LABEL, GROUP_END_LABEL, _normalize
 from backend.stages.simple_counters import EXCLUDE_SPECIALITIES
@@ -25,6 +28,8 @@ from backend.stages.simple_counters import EXCLUDE_SPECIALITIES
 logger = logging.getLogger(__name__)
 
 from backend.runtime_paths import DATA_DIR
+
+_find_column = partial(find_column, match="prefix")
 
 VERIFICATION_HISTORY_PATH = DATA_DIR / "verification_history.json"
 
@@ -56,14 +61,6 @@ NON_NEGATIVE_KEYS = [
     "Billing Total", "Cash Domestic", "Cash International", "Credit Domestic Total",
     "Credit International Total", "Credit Total Billing", "AEPL Billing",
 ]
-
-
-def _find_column(df, expected_name):
-    target = normalize_alnum(expected_name)
-    for col in df.columns:
-        if normalize_alnum(str(col)).startswith(target):
-            return col
-    raise ValueError(f"Column matching {expected_name!r} not found.")
 
 
 def _check(name, expected, actual):

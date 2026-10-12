@@ -5,39 +5,17 @@ Discharges DataFrame Stage 4 already loaded -- no separate upload needed.
 number (confirmed against the real sheet), not a date to diff ourselves.
 """
 import logging
-import re
 
 import pandas as pd
 
+from backend.stages.columns import find_column as _find_column
 from backend.stages.category_mapping import resolve_category
 from backend.stages.category_review import review_dataframe
+from backend.stages.cat_dependent_counts import BUCKET_TO_OUTPUT_KEY
 
 logger = logging.getLogger(__name__)
 
 LONG_STAY_THRESHOLD_DAYS = 10
-
-BUCKET_TO_OUTPUT_KEY = {
-    "General": "General",
-    "TPA": "TPA",
-    "ECHS": "ECHS",
-    "P CARD FUND": "P.Card.Fund",
-    "CPR": "Corporates",
-}
-
-
-def _normalize_header(name) -> str:
-    if not isinstance(name, str):
-        return ""
-    return re.sub(r"\s+", "", name.strip().lower())
-
-
-def _find_column(df: pd.DataFrame, expected_name: str) -> str:
-    target = _normalize_header(expected_name)
-    for col in df.columns:
-        if _normalize_header(str(col)) == target:
-            return col
-    raise ValueError(f"Column matching {expected_name!r} not found. Available: {list(df.columns)}")
-
 
 def process_long_stay_patients(df: pd.DataFrame, source_file: str = None, overrides: dict = None) -> dict:
     days_col = _find_column(df, "Days")

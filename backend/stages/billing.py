@@ -1,32 +1,16 @@
 """Stage 5: Billing OP + IP processing."""
-import re
+
+from functools import partial
 
 import pandas as pd
 
+from backend.stages.columns import find_column
 from backend.stages.category_mapping import resolve_category, resolve_region
 from backend.stages.category_review import review_dataframe
 from backend.stages.row_cleaning import strip_junk_rows
 
-
-def _normalize_header(name) -> str:
-    if not isinstance(name, str):
-        return ""
-    return re.sub(r"[^a-z0-9]", "", name.lower())
-
-
-def _find_column(df: pd.DataFrame, expected_name: str, required: bool = True):
-    """Matches a column whose normalized name starts with the normalized expected name.
-
-    startswith (not equality) because real headers append suffixes like
-    "(Inc.Tax)" or "(Inc. Tax)" onto "TotalAmt".
-    """
-    target = _normalize_header(expected_name)
-    for col in df.columns:
-        if _normalize_header(str(col)).startswith(target):
-            return col
-    if required:
-        raise ValueError(f"Column matching {expected_name!r} not found. Available: {list(df.columns)}")
-    return None
+# real headers append suffixes like "(Inc.Tax)" onto "TotalAmt"
+_find_column = partial(find_column, match="prefix")
 
 
 def _enrich(df: pd.DataFrame, overrides: dict = None) -> pd.DataFrame:
