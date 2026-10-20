@@ -104,3 +104,22 @@ def test_is_overridden_true_for_bucket_and_excluded_false_otherwise():
     assert cm.is_overridden("Junk Value", overrides) is True
     assert cm.is_overridden("Never Touched", overrides) is False
     assert cm.is_overridden("Weird ESI Variant", None) is False
+
+
+def test_undocumented_year_variant_is_not_silently_mapped_but_suggested():
+    from backend.stages.category_review import fuzzy_best_match
+    assert cm.map_category("CPR 27") is None
+    assert fuzzy_best_match("CPR 27")["bucket"] == "CPR"
+
+
+def test_unconfirmed_codes_go_to_review_with_suggestion_until_confirmed():
+    from backend.stages.category_review import fuzzy_best_match
+    assert cm.map_category("TPA 26") is None and cm.map_region("TPA 26") is None
+    assert fuzzy_best_match("TPA 26")["bucket"] == "TPA"
+    for raw in ("labcpr25op.1", "labcpr26op.1"):
+        assert cm.map_category(raw) == "CPR" and cm.map_region(raw) == "Domestic"
+    for raw in ("INHS 2025", "INHS GNL"):
+        assert cm.map_category(raw) == "General" and cm.map_region(raw) == "Domestic"
+    overrides = {cm.normalize_loose("TPA 26"): "TPA"}
+    assert cm.resolve_category("TPA 26", overrides) == "TPA"
+    assert cm.resolve_region("TPA 26", overrides) == "Domestic"

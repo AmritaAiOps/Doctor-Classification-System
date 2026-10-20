@@ -37,7 +37,8 @@
   },
   "cpr26": {
     "bucket": "CPR",
-    "region": "Domestic"
+    "region": "Domestic",
+    "confirm": true
   },
   "cprafroasian": {
     "bucket": "CPR",
@@ -48,10 +49,6 @@
     "region": "International"
   },
   "cprsaarcself": {
-    "bucket": "CPR",
-    "region": "International"
-  },
-  "cprsaarc": {
     "bucket": "CPR",
     "region": "International"
   },
@@ -179,7 +176,15 @@
     "bucket": "General",
     "region": "Domestic"
   },
+  "labcpr25op1": {
+    "bucket": "CPR",
+    "region": "Domestic"
+  },
   "labcpr26": {
+    "bucket": "CPR",
+    "region": "Domestic"
+  },
+  "labcpr26op1": {
     "bucket": "CPR",
     "region": "Domestic"
   },
@@ -188,10 +193,6 @@
     "region": "Domestic"
   },
   "labcprop25": {
-    "bucket": "CPR",
-    "region": "Domestic"
-  },
-  "labcpr25op1": {
     "bucket": "CPR",
     "region": "Domestic"
   },
@@ -225,7 +226,8 @@
   },
   "studyfaculty": {
     "bucket": "General",
-    "region": "Domestic"
+    "region": "Domestic",
+    "confirm": true
   },
   "thesis": {
     "bucket": "General",

@@ -34,7 +34,7 @@ EXCLUDED = "__EXCLUDED__"
 # Review instead of an exact map lookup.
 INTERNATIONAL_HINTS = (
     "afroasian", "oman", "saarc", "maldives", "aasandha", "aasantha",
-    "westernersandmideasterners",
+    "westernersandmideasterners", "middleeast",
 )
 
 
@@ -58,22 +58,20 @@ def _load_map() -> dict:
     return _CATEGORY_MAP
 
 
-def _lookup(raw_value: str) -> Optional[dict]:
-    """category_map.json lookup, falling back to the trailing-digits-stripped
-    key if the exact key isn't found -- e.g. "CPR 26" (this fiscal year's
-    code, not yet added to the Category Codes sheet) falls back to "CPR"
-    itself. Codes are re-issued with a new year suffix every year (CPR 24,
-    CPR 25, CPR 26, ...) and the year never changes what bucket/region they
-    belong to, so there's no need to hand-add one row per year."""
-    m = _load_map()
-    key = normalize_loose(raw_value)
-    entry = m.get(key)
-    if entry is not None:
-        return entry
-    stripped = re.sub(r"\d+$", "", key)
-    if stripped != key:
-        return m.get(stripped)
-    return None
+def _lookup(raw_value: str, include_unconfirmed: bool = False) -> Optional[dict]:
+    """Exact category_map.json lookup (after normalize_loose). No year-suffix
+    fallback: a new code like "CPR 26" that isn't in the documented Category
+    Codes list must go to Category Review (with a fuzzy suggestion) instead of
+    being counted silently. Once confirmed it's remembered as a learned override.
+
+    Entries marked "confirm": true (codes not in the Category Codes sheet, or
+    whose bucket the doc and the MIS disagree on, e.g. Study faculty) are skipped unless
+    include_unconfirmed, so they show in Category Review with their bucket as
+    the suggestion until a human confirms them."""
+    entry = _load_map().get(normalize_loose(raw_value))
+    if entry is not None and entry.get("confirm") and not include_unconfirmed:
+        return None
+    return entry
 
 
 def map_category(raw_value: Optional[str]) -> Optional[str]:
@@ -132,9 +130,9 @@ def resolve_region(raw_value: Optional[str], overrides: Optional[dict] = None) -
         if key in overrides:
             if overrides[key] == EXCLUDED:
                 return None
-            region = map_region(raw_value)
-            if region:
-                return region
+            entry = _lookup(raw_value, include_unconfirmed=True)
+            if entry:
+                return entry["region"]
             return "International" if any(hint in key for hint in INTERNATIONAL_HINTS) else "Domestic"
     return map_region(raw_value)
 

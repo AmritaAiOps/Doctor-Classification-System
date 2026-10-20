@@ -58,6 +58,21 @@ def _summarize(values: dict) -> dict:
     }
 
 
+BILLING_SOURCES = {"Billing INR OP", "Billing INR IP"}
+
+
+def _pending_billing_values(category_review: dict) -> list:
+    """Raw billing Category values still awaiting review. While any remain,
+    OP + IP and Domestic + International can't be reconciled, so the day is
+    neither exported nor recorded into MTD history. Blank categories can't be
+    resolved in the panel, so they never block."""
+    entries = category_review.get("possible_matches", []) + category_review.get("unmatched", [])
+    return sorted({
+        str(e["raw_value"]) for e in entries
+        if e["source_file"] in BILLING_SOURCES and e["raw_value"] is not None
+    })
+
+
 def _warnings_from_category_review(category_review: dict) -> list:
     warnings = []
     unmatched = category_review.get("unmatched", [])
@@ -76,6 +91,13 @@ def _warnings_from_category_review(category_review: dict) -> list:
         warnings.append(
             f"{len(possible)} category value(s) have a possible match awaiting your confirmation "
             "— see Category Review panel."
+        )
+
+    pending = _pending_billing_values(category_review)
+    if pending:
+        warnings.append(
+            f"Export blocked: billing category value(s) {', '.join(pending)} need review "
+            "— resolve them in Category Review so billing totals reconcile."
         )
 
     return warnings
@@ -107,9 +129,12 @@ def _run_verification_safely(values: dict, dataframes: dict, report_date) -> dic
         return None
 
 
-def _record_history(report_date, values: dict) -> None:
+def _record_history(report_date, values: dict, category_review: dict) -> None:
     # Persist today's figures for this month -- needed for MTD/Daily Average
-    # regardless of whether the user ever downloads a spreadsheet.
+    # regardless of whether the user ever downloads a spreadsheet. Skipped while
+    # billing review is pending so an unreconciled day never enters MTD.
+    if _pending_billing_values(category_review):
+        return
     record_day(report_date, values, metric_keys=list(values.keys()))
 
 
@@ -330,7 +355,7 @@ async def process(
         return {"status": "error", "failed_file": None, "reason": str(exc)}
 
     file_id = uuid.uuid4().hex
-    _record_history(report_date, values)
+    _record_history(report_date, values, category_review)
     verification = _run_verification_safely(values, dataframes, report_date)
 
     RUN_STATE[file_id] = {
@@ -409,6 +434,12 @@ def download(file_id: str):
     state = RUN_STATE.get(file_id)
     if state is None:
         raise HTTPException(status_code=404, detail="No processed run found for this id")
+    pending = _pending_billing_values(state["category_review"])
+    if pending:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Resolve billing categories in Category Review before exporting: {', '.join(pending)}",
+        )
     output_path = _build_output_file(state["values"], state["report_date"])
     return FileResponse(
         output_path,
@@ -476,7 +507,7 @@ def resolve_category_review(payload: CategoryResolveRequest):
 
     state["values"] = values
     state["category_review"] = category_review
-    _record_history(state["report_date"], values)
+    _record_history(state["report_date"], values, category_review)
     verification = _run_verification_safely(values, state["dataframes"], state["report_date"])
 
     return _build_result_response(payload.file_id, values, category_review, f"/download/{payload.file_id}", verification)

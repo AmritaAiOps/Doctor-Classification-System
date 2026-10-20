@@ -86,6 +86,17 @@ def test_ip_admission_counts_admission_ward_rows():
     assert result["category_review"]["unmatched"] == []
 
 
+def test_daycare_rows_counted_in_every_bucket():
+    df = pd.DataFrame({
+        "Category": ["GNL", "TPA", "ECHS"],
+        "Ward": ["Admission Ward", "T3F1 -Daycare Lounge", "ICU"],
+        "Bed Type": ["Day Case A", "Daycase Bed", "ICU"],
+    })
+    for process in (process_ip_admission, process_ip_discharges):
+        r = process(df)
+        assert (r["General"], r["TPA"], r["ECHS"], r["Total"]) == (1, 1, 1, 3)
+
+
 def test_process_ip_admission_without_ward_column_is_unaffected():
     df = _sample_df()
     result = process_ip_admission(df)

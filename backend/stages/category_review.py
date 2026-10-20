@@ -15,7 +15,8 @@ from rapidfuzz import fuzz
 
 from backend.stages.category_mapping import _load_map, normalize_loose, resolve_category, is_overridden
 
-FUZZY_THRESHOLD = 90
+# 80 so year-suffix variants of documented codes (CPR 26 vs CPR 25) still get a suggestion
+FUZZY_THRESHOLD = 80
 
 _LOOSE_INDEX_CACHE = None
 

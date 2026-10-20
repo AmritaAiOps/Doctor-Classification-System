@@ -11,5 +11,5 @@ from backend.stages.category_mapping import map_category
 
 def test_every_known_category_value_still_matches_exactly():
     known_values = json.loads((CONFIG_DIR / "category_map.json").read_text())
-    dropped = [raw for raw in known_values if map_category(raw) is None]
+    dropped = [raw for raw, entry in known_values.items() if not entry.get("confirm") and map_category(raw) is None]
     assert not dropped, f"Category value(s) dropped out of the 'matched' tier: {dropped}"

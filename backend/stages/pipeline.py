@@ -74,8 +74,7 @@ def run_pipeline(dataframes: dict, overrides: dict = None) -> dict:
         "OP Encounters": op_encounters,
         "Emergency Admission": admission_analysis["Emergency Admission"],
         "Planned Admission": admission_analysis["Planned Admission"],
-        # MIS formula: IP Admission - Emergency - Planned (the analysis sheet's own walk-in total includes day-care)
-        "Admission from OP (walk-in)": ip_admission["Total"] - admission_analysis["Emergency Admission"] - admission_analysis["Planned Admission"],
+        "Admission from OP (walk-in)": admission_analysis["Admission from OP (walk-in)"],
         "Long Stay Patients": long_stay_patients["Total"],
         "OP Billing": op_total,
         "IP Billing": ip_total,

@@ -1,4 +1,0 @@
-{
-  "IP Admission": {"column": "Bed Type", "pattern": "day\\s*case"},
-  "IP Discharges": {"column": "Ward", "pattern": "Admission Ward|Daycare"}
-}

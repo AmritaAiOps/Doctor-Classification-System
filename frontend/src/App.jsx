@@ -28,6 +28,7 @@ function App() {
   const [result, setResult] = useState(null)
   const [errorInfo, setErrorInfo] = useState(null)
   const [downloadStatus, setDownloadStatus] = useState(null) // null | 'success' | 'error'
+  const [downloadError, setDownloadError] = useState(null) // server's reason, e.g. billing review pending
   const [downloading, setDownloading] = useState(false)
   const stepTimer = useRef(null)
   const progressTimer = useRef(null)
@@ -245,9 +246,14 @@ function App() {
   async function handleDownload() {
     setDownloading(true)
     setDownloadStatus(null)
+    setDownloadError(null)
     try {
       const res = await fetch(result.download_url)
-      if (!res.ok) throw new Error('download failed')
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setDownloadError(body.detail || null)
+        throw new Error('download failed')
+      }
       const blob = await res.blob()
 
       const url = URL.createObjectURL(blob)
@@ -415,7 +421,7 @@ function App() {
           )}
           {downloadStatus === 'error' && (
             <div className="banner banner--error banner--compact">
-              <div className="banner__body">Download failed. Check your connection and try again.</div>
+              <div className="banner__body">{downloadError || 'Download failed. Check your connection and try again.'}</div>
             </div>
           )}
           <div className="result-actions">

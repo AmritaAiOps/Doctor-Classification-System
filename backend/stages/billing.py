@@ -13,6 +13,29 @@ from backend.stages.row_cleaning import strip_junk_rows
 _find_column = partial(find_column, match="prefix")
 
 
+def _realign_shifted_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """HIS exports some bill-counter blocks (e.g. "Cardiology(AFC)Bill Counter")
+    with an extra blank cell before Category, so Category is empty, TotalAmt
+    holds the category code and every later value sits one column right. Those
+    rows read as amount-less and were silently dropped (08-Oct: Rs 3,640 of OP).
+    Shift them back one column left."""
+    category_col = _find_column(df, "Category")
+    total_amt_col = _find_column(df, "TotalAmt")
+    shifted = (
+        df[category_col].isna()
+        & df[total_amt_col].map(lambda v: isinstance(v, str) and v.strip() != "")
+        & pd.to_numeric(df[total_amt_col], errors="coerce").isna()
+    )
+    if not shifted.any():
+        return df
+    start = df.columns.get_loc(category_col)
+    tail = df.iloc[:, start:].to_numpy(dtype=object)
+    mask = shifted.to_numpy()
+    tail[mask, :-1] = tail[mask, 1:]
+    tail[mask, -1] = None
+    return pd.concat([df.iloc[:, :start], pd.DataFrame(tail, index=df.index, columns=df.columns[start:])], axis=1)
+
+
 def _enrich(df: pd.DataFrame, overrides: dict = None) -> pd.DataFrame:
     total_amt_col = _find_column(df, "TotalAmt")
     disc_amt_col = _find_column(df, "DiscAmt")
@@ -26,7 +49,15 @@ def _enrich(df: pd.DataFrame, overrides: dict = None) -> pd.DataFrame:
     return df, category_col
 
 
+def _classified_net(df: pd.DataFrame) -> float:
+    # Only rows with a region (mapped or reviewed) count, so OP + IP always equals
+    # Domestic + International. Unreviewed rows block export (main.py) instead of
+    # silently landing in one total but not the other.
+    return df.loc[df["Region"].notna(), "Net"].sum()
+
+
 def process_billing_op(df: pd.DataFrame, source_file: str = None, overrides: dict = None) -> tuple:
+    df = _realign_shifted_rows(df)
     total_amt_col = _find_column(df, "TotalAmt")
     disc_amt_col = _find_column(df, "DiscAmt")
     bill_type_col = _find_column(df, "BillType")
@@ -36,10 +67,11 @@ def process_billing_op(df: pd.DataFrame, source_file: str = None, overrides: dic
 
     enriched, category_col = _enrich(cleaned, overrides)
     category_review = review_dataframe(enriched, category_col, source_file, overrides)
-    return enriched, enriched["Net"].sum(), category_review
+    return enriched, _classified_net(enriched), category_review
 
 
 def process_billing_ip(df: pd.DataFrame, source_file: str = None, overrides: dict = None) -> tuple:
+    df = _realign_shifted_rows(df)
     total_amt_col = _find_column(df, "TotalAmt")
     disc_amt_col = _find_column(df, "DiscAmt")
     bill_type_col = _find_column(df, "BillType")
@@ -54,4 +86,4 @@ def process_billing_ip(df: pd.DataFrame, source_file: str = None, overrides: dic
     if time_col is not None:
         enriched = enriched.drop(columns=[time_col])
 
-    return enriched, enriched["Net"].sum(), category_review
+    return enriched, _classified_net(enriched), category_review

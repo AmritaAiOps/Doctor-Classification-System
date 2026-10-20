@@ -67,3 +67,28 @@ def test_process_billing_ip_drops_time_column_if_present():
 def test_process_billing_ip_ok_without_time_column():
     enriched, _total, _review = process_billing_ip(_ip_df())
     assert "Time" not in enriched.columns
+
+
+def test_unclassified_rows_stay_out_of_total_so_op_ip_matches_domestic_international():
+    df = _op_df()
+    df.loc[2, "Category"] = "Unknown Code"
+    enriched, total, _review = process_billing_op(df)
+    assert total == 900  # the unmapped O_B row has no Region, so it isn't counted
+    assert total == enriched.loc[enriched["Region"].notna(), "Net"].sum()
+
+
+def test_row_shifted_one_column_right_is_realigned_not_dropped():
+    # Real 09-Oct AFC row: extra blank before Category pushes every value right
+    df = pd.DataFrame({
+        "Bill\nType": ["O_B", "O_B"],
+        "Patient Name": ["A", "SANAL. G"],
+        "Category": ["GNL", None],
+        "TotalAmt\n(Inc.Tax)": [750, "GNL"],
+        "Credit\n Amt": [0, 2630],
+        "Disc\nAmt": [150, 0],
+        "Write off  Amt": [0, 530],
+        "Unnamed: 5": [None, 0],
+    })
+    enriched, total, _review = process_billing_op(df)
+    assert total == 600 + 2100
+    assert enriched["Category"].tolist() == ["GNL", "GNL"]
